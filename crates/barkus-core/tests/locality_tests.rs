@@ -89,7 +89,7 @@ fn locality_sequence_of_choices() {
 
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let (ast, tape) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
         let original = ast.serialize();
         assert_eq!(original.len(), 3, "seed={seed}: output should be 3 bytes");
         // Tape: [mode, reserved, A_choice, B_choice, C_choice]
@@ -98,7 +98,7 @@ fn locality_sequence_of_choices() {
         for flip_idx in 2..5 {
             let mut mutated = tape.bytes.clone();
             mutated[flip_idx] ^= 0xFF;
-            let decoded = decode(&ir, &profile, &mutated).unwrap();
+            let (decoded, _) = decode(&ir, &profile, &mutated).unwrap();
             let out = decoded.serialize();
             assert_eq!(out.len(), 3);
 
@@ -160,7 +160,7 @@ fn locality_prefix_stable_under_suffix_mutation() {
 
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let (ast, tape) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
         let original = ast.serialize();
         assert_eq!(tape.bytes.len(), 4, "seed={seed}: tape should be 4 bytes");
         assert_eq!(original.len(), 8, "seed={seed}: output should be 8 bytes");
@@ -168,7 +168,7 @@ fn locality_prefix_stable_under_suffix_mutation() {
         // Flip B's byte (index 3) — A's 5-byte prefix must be identical.
         let mut mutated = tape.bytes.clone();
         mutated[3] ^= 0xFF;
-        let decoded = decode(&ir, &profile, &mutated).unwrap();
+        let (decoded, _) = decode(&ir, &profile, &mutated).unwrap();
         let out = decoded.serialize();
         assert_eq!(
             &original[..5],
@@ -222,7 +222,7 @@ fn locality_suffix_stable_under_prefix_mutation() {
 
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let (ast, tape) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
         let original = ast.serialize();
         assert_eq!(tape.bytes.len(), 4);
         assert_eq!(original.len(), 8);
@@ -230,7 +230,7 @@ fn locality_suffix_stable_under_prefix_mutation() {
         // Flip A's byte (index 2) — B's 3-byte suffix must be identical.
         let mut mutated = tape.bytes.clone();
         mutated[2] ^= 0xFF;
-        let decoded = decode(&ir, &profile, &mutated).unwrap();
+        let (decoded, _) = decode(&ir, &profile, &mutated).unwrap();
         let out = decoded.serialize();
         assert_eq!(
             &original[5..],
@@ -274,7 +274,7 @@ fn locality_recursive_grammar() {
     let mut tested = 0;
     for seed in 0..100 {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let (ast, tape) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
         let original = ast.serialize();
         let n_decisions = tape.bytes.len() - 2;
 
@@ -292,7 +292,7 @@ fn locality_recursive_grammar() {
         {
             let mut mutated = tape.bytes.clone();
             mutated[tape.bytes.len() - 1] ^= 0xFF;
-            if let Ok(decoded) = decode(&ir, &profile, &mutated) {
+            if let Ok((decoded, _)) = decode(&ir, &profile, &mutated) {
                 let out = decoded.serialize();
                 assert!(
                     out.len() >= depth,
@@ -314,7 +314,7 @@ fn locality_recursive_grammar() {
             let mut mutated = tape.bytes.clone();
             mutated[mid_tape_idx] ^= 0xFF;
 
-            if let Ok(decoded) = decode(&ir, &profile, &mutated) {
+            if let Ok((decoded, _)) = decode(&ir, &profile, &mutated) {
                 let out = decoded.serialize();
                 // Decisions 0..mid each contributed one '(' to the prefix.
                 assert!(
@@ -383,7 +383,7 @@ fn locality_repetition_count_isolated() {
 
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let (_, tape) = generate(&ir, &profile, &mut rng).unwrap();
+        let (_, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
         // Tape: [mode, reserved, A_rep, B_choice]
         assert_eq!(tape.bytes.len(), 4, "seed={seed}: unexpected tape length");
 
@@ -391,7 +391,7 @@ fn locality_repetition_count_isolated() {
         // known wrapping-overflow issue for range > 2 that can desync generate
         // vs decode. Locality is a tape-level property, so decode-vs-decode is
         // the correct comparison.
-        let original = decode(&ir, &profile, &tape.bytes).unwrap().serialize();
+        let original = decode(&ir, &profile, &tape.bytes).unwrap().0.serialize();
         assert!(original.len() >= 1, "seed={seed}: output too short");
 
         let a_len = original.len() - 1;
@@ -401,7 +401,7 @@ fn locality_repetition_count_isolated() {
         {
             let mut mutated = tape.bytes.clone();
             mutated[2] ^= 0xFF;
-            let decoded = decode(&ir, &profile, &mutated).unwrap();
+            let (decoded, _) = decode(&ir, &profile, &mutated).unwrap();
             let out = decoded.serialize();
             assert_eq!(
                 *out.last().unwrap(),
@@ -420,7 +420,7 @@ fn locality_repetition_count_isolated() {
         {
             let mut mutated = tape.bytes.clone();
             mutated[3] ^= 0xFF;
-            let decoded = decode(&ir, &profile, &mutated).unwrap();
+            let (decoded, _) = decode(&ir, &profile, &mutated).unwrap();
             let out = decoded.serialize();
             assert_eq!(out.len(), original.len(), "seed={seed}: length changed on B flip");
             assert_eq!(
@@ -476,7 +476,7 @@ fn locality_many_decisions_single_flip() {
 
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let (ast, tape) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
         let original = ast.serialize();
         assert_eq!(original.len(), N, "seed={seed}");
         assert_eq!(tape.bytes.len(), 2 + N, "seed={seed}");
@@ -485,7 +485,7 @@ fn locality_many_decisions_single_flip() {
             let tape_idx = 2 + flip_pos;
             let mut mutated = tape.bytes.clone();
             mutated[tape_idx] ^= 0xFF;
-            let decoded = decode(&ir, &profile, &mutated).unwrap();
+            let (decoded, _) = decode(&ir, &profile, &mutated).unwrap();
             let out = decoded.serialize();
             assert_eq!(out.len(), N);
 

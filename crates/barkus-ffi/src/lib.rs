@@ -104,7 +104,7 @@ pub unsafe extern "C" fn barkus_generate(
         }
     };
 
-    let (ast, _tape) = match generate(&h.ir, &h.profile, &mut h.rng) {
+    let (ast, _tape, _map) = match generate(&h.ir, &h.profile, &mut h.rng) {
         Ok(result) => result,
         Err(e) => {
             set_last_error(&format!("generate error: {e}"));
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn barkus_generate_with_tape(
         }
     };
 
-    let (ast, tape) = match generate(&h.ir, &h.profile, &mut h.rng) {
+    let (ast, tape, _map) = match generate(&h.ir, &h.profile, &mut h.rng) {
         Ok(result) => result,
         Err(e) => {
             set_last_error(&format!("generate error: {e}"));
@@ -215,8 +215,8 @@ pub unsafe extern "C" fn barkus_decode(
         slice::from_raw_parts(tape_ptr, tape_len)
     };
 
-    let ast = match decode(&h.ir, &h.profile, tape_bytes) {
-        Ok(ast) => ast,
+    let (ast, _map) = match decode(&h.ir, &h.profile, tape_bytes) {
+        Ok(result) => result,
         Err(e) => {
             set_last_error(&format!("decode error: {e}"));
             return -1;

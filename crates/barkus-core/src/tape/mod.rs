@@ -134,6 +134,11 @@ impl TapeWriter {
         self.bytes.push(byte);
     }
 
+    /// Current offset (for TapeMap).
+    pub fn offset(&self) -> usize {
+        self.bytes.len()
+    }
+
     pub fn finish(self) -> DecisionTape {
         DecisionTape { bytes: self.bytes }
     }

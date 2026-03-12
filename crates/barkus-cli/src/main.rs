@@ -85,7 +85,7 @@ fn main() {
 
             for _ in 0..count {
                 match generate(&ir, &profile, &mut rng) {
-                    Ok((ast, tape)) => {
+                    Ok((ast, tape, _map)) => {
                         print_output(&ast);
                         if emit_tape {
                             eprintln!("{}", hex::encode(&tape.bytes));
@@ -129,7 +129,7 @@ fn main() {
             });
 
             match decode(&ir, &profile, &tape_bytes) {
-                Ok(ast) => print_output(&ast),
+                Ok((ast, _map)) => print_output(&ast),
                 Err(e) => {
                     eprintln!("decode error: {e}");
                     process::exit(1);

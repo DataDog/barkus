@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -66,6 +66,16 @@ After serialization, apply the 13 byte-level ops from fuzz-generators. For findi
 - AST-level mutation more expensive than raw byte ops.
 - `MutationMeta` adds memory overhead per corpus entry.
 - `FragmentDb` requires initial corpus or warm-up phase.
+
+## Implementation
+
+Level 1 and Level 2 operators are implemented:
+
+- **Operators (Level 1 + Level 2):** `crates/barkus-core/src/mutation/ops.rs`
+- **Fragment database:** `crates/barkus-core/src/mutation/fragment_db.rs`
+- **Per-input metadata:** `crates/barkus-core/src/mutation/meta.rs`
+
+Not yet implemented: Level 3 (byte havoc), and remaining Level 2 operators — shrink/expand literals, swap siblings, dictionary injection, semantic repair.
 
 ## Links
 

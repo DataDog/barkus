@@ -64,7 +64,7 @@ fn simple_literal_grammar() {
 
     let profile = Profile::default();
     let mut rng = SmallRng::seed_from_u64(1);
-    let (ast, _tape) = generate(&ir, &profile, &mut rng).unwrap();
+    let (ast, _tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
 
     assert_eq!(ast.serialize(), b"hello");
 }
@@ -95,7 +95,7 @@ fn choice_grammar() {
     let mut saw_b = false;
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
-        let (ast, _tape) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast, _tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
         let out = ast.serialize();
         if out == b"a" {
             saw_a = true;
@@ -135,7 +135,7 @@ fn repetition_grammar() {
 
     let profile = Profile::default();
     let mut rng = SmallRng::seed_from_u64(7);
-    let (ast, _tape) = generate(&ir, &profile, &mut rng).unwrap();
+    let (ast, _tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
     let out = ast.serialize();
 
     // Output should be 0-5 'x' characters.
@@ -173,7 +173,7 @@ fn recursive_grammar_depth_bounded() {
 
     let profile = Profile::builder().max_depth(5).build();
     let mut rng = SmallRng::seed_from_u64(42);
-    let (ast, _tape) = generate(&ir, &profile, &mut rng).unwrap();
+    let (ast, _tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
     let out = ast.serialize();
 
     // Verify well-formed: balanced parens ending with x.
@@ -210,8 +210,8 @@ fn generate_decode_roundtrip() {
     let profile = Profile::builder().max_depth(8).build();
     let mut rng = SmallRng::seed_from_u64(123);
 
-    let (ast1, tape) = generate(&ir, &profile, &mut rng).unwrap();
-    let ast2 = decode(&ir, &profile, &tape.bytes).unwrap();
+    let (ast1, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
+    let (ast2, _map2) = decode(&ir, &profile, &tape.bytes).unwrap();
 
     assert_eq!(ast1.serialize(), ast2.serialize());
 }
@@ -281,7 +281,7 @@ fn tape_locality() {
 
     let profile = Profile::default();
     let mut rng = SmallRng::seed_from_u64(55);
-    let (ast1, tape) = generate(&ir, &profile, &mut rng).unwrap();
+    let (ast1, tape, _map) = generate(&ir, &profile, &mut rng).unwrap();
     let out1 = ast1.serialize();
 
     // Flip the first decision byte (byte index 2, after header).
@@ -290,7 +290,7 @@ fn tape_locality() {
         modified_bytes[2] ^= 1;
     }
 
-    let ast2 = decode(&ir, &profile, &modified_bytes).unwrap();
+    let (ast2, _map2) = decode(&ir, &profile, &modified_bytes).unwrap();
     let out2 = ast2.serialize();
 
     // For this simple grammar the output may change, but it's still valid.

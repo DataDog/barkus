@@ -35,9 +35,9 @@ Chosen option: **Option 1 — Multi-layer testing.**
 **Layer 2 — Property-based tests (`proptest` / `quickcheck`):**
 - **Tape determinism**: `∀ tape, grammar, profile: decode(tape, g, p) == decode(tape, g, p)`.
 - **Tape totality**: `∀ tape: decode(tape, g, p)` succeeds (never panics, never returns error).
-- **Tape locality**: `∀ tape, i: hamming_distance(decode(tape, g, p), decode(flip(tape, i), g, p))` is small (measures structural diff, not byte diff).
+- **Tape locality**: `∀ tape, i: hamming_distance(decode(tape, g, p), decode(flip(tape, i), g, p))` is small (measures structural diff, not byte diff). See `crates/barkus-core/tests/locality_tests.rs`.
 - **Generate-decode roundtrip**: `∀ rng: let (ast, tape) = generate(rng, g, p); decode(tape, g, p) == ast`.
-- **Mutation validity**: `∀ ast in strict mode: mutate(ast, ...) produces valid output` (validated by re-parsing with a reference parser).
+- **Mutation validity**: `∀ ast in strict mode: mutate(ast, ...) produces valid output` (validated by re-parsing with a reference parser). See `crates/barkus-core/tests/mutation_tests.rs`.
 - **Shrink monotonicity**: `∀ ast: shrink(ast)` produces strictly smaller ASTs that still reproduce the property.
 
 **Layer 3 — Self-fuzzing (`cargo fuzz` / libFuzzer):**

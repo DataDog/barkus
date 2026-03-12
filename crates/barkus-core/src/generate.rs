@@ -5,6 +5,7 @@ use crate::error::{BudgetKind, GenerateError};
 use crate::ir::grammar::{GrammarIr, Modifier, Symbol, TerminalKind};
 use crate::ir::ids::{NodeId, ProductionId, SymbolId};
 use crate::profile::Profile;
+use crate::tape::map::TapeMap;
 use crate::tape::{DecisionTape, TapeReader, TapeWriter};
 
 /// Generate an AST from a grammar using random decisions, recording them to a tape.
@@ -12,15 +13,31 @@ pub fn generate(
     grammar: &GrammarIr,
     profile: &Profile,
     rng: &mut impl Rng,
-) -> Result<(Ast, DecisionTape), GenerateError> {
+) -> Result<(Ast, DecisionTape, TapeMap), GenerateError> {
+    generate_from(grammar, grammar.start, profile, rng)
+}
+
+/// Generate an AST starting from a specific production.
+///
+/// This is the entry point used by [`crate::mutation::ops::subtree_regenerate`] to produce a
+/// fresh tape fragment for a single production. By starting generation from an arbitrary
+/// production (rather than the grammar root), it yields a self-contained subtree + tape that
+/// can be spliced into an existing tape to replace the original subtree.
+pub fn generate_from(
+    grammar: &GrammarIr,
+    start: ProductionId,
+    profile: &Profile,
+    rng: &mut impl Rng,
+) -> Result<(Ast, DecisionTape, TapeMap), GenerateError> {
     let mut ctx = GenCtx::new(profile);
     let mut writer = TapeWriter::new(profile.validity_mode);
     let mut eligible_buf = Vec::new();
 
-    let root = expand_production_gen(grammar, profile, grammar.start, &mut ctx, &mut writer, rng, &mut eligible_buf)?;
+    let root = expand_production_gen(grammar, profile, start, &mut ctx, &mut writer, rng, &mut eligible_buf)?;
     ctx.ast.root = root;
 
-    Ok((ctx.ast, writer.finish()))
+    let tape = writer.finish();
+    Ok((ctx.ast, tape, ctx.tape_map))
 }
 
 /// Decode an AST from a grammar using a pre-recorded tape.
@@ -28,7 +45,7 @@ pub fn decode(
     grammar: &GrammarIr,
     profile: &Profile,
     tape: &[u8],
-) -> Result<Ast, GenerateError> {
+) -> Result<(Ast, TapeMap), GenerateError> {
     let mut ctx = GenCtx::new(profile);
     let mut reader = TapeReader::new(tape);
     let mut eligible_buf = Vec::new();
@@ -36,11 +53,12 @@ pub fn decode(
     let root = expand_production_dec(grammar, profile, grammar.start, &mut ctx, &mut reader, &mut eligible_buf)?;
     ctx.ast.root = root;
 
-    Ok(ctx.ast)
+    Ok((ctx.ast, ctx.tape_map))
 }
 
 struct GenCtx {
     ast: Ast,
+    tape_map: TapeMap,
     depth: u32,
     total_nodes: u32,
     max_depth: u32,
@@ -54,6 +72,7 @@ impl GenCtx {
                 nodes: Vec::new(),
                 root: NodeId(0),
             },
+            tape_map: TapeMap::new(),
             depth: 0,
             total_nodes: 0,
             max_depth: profile.max_depth,
@@ -96,6 +115,8 @@ fn expand_production_gen(
 
     eligible_alts(grammar, prod, remaining, eligible_buf);
 
+    let tape_start = writer.offset();
+
     let alt_idx = if eligible_buf.is_empty() {
         let chosen = rng.gen_range(0..n_alts);
         writer.write_choice(chosen, n_alts, rng);
@@ -117,6 +138,8 @@ fn expand_production_gen(
     }
     ctx.depth -= 1;
 
+    ctx.tape_map.push(tape_start, writer.offset() - tape_start, node_id, prod_id);
+
     Ok(node_id)
 }
 
@@ -130,6 +153,7 @@ fn expand_symbol_ref_gen(
     parent: NodeId,
     eligible_buf: &mut Vec<usize>,
 ) -> Result<(), GenerateError> {
+    record_modifier(&sym_ref.modifier, profile, writer.offset(), &mut ctx.tape_map);
     let count = resolve_modifier_gen(&sym_ref.modifier, profile, writer, rng);
 
     for _ in 0..count {
@@ -137,6 +161,40 @@ fn expand_symbol_ref_gen(
         ctx.ast.add_child(parent, child);
     }
     Ok(())
+}
+
+/// Record a modifier's tape position in the `TapeMap` for mutation-time lookup.
+///
+/// Must be called *before* the modifier byte is consumed by `resolve_modifier_gen` /
+/// `resolve_modifier_dec`, because the `offset` parameter captures the tape position where
+/// the modifier byte will be written/read. The positional coupling between `record_modifier`
+/// and `resolve_modifier_*` is intentional: the TapeMap entry must point to the exact byte
+/// that encodes the modifier decision.
+fn record_modifier(
+    modifier: &Modifier,
+    profile: &Profile,
+    offset: usize,
+    tape_map: &mut crate::tape::map::TapeMap,
+) {
+    match modifier {
+        Modifier::Once => {}
+        Modifier::Optional => {
+            tape_map.push_optional(offset);
+        }
+        Modifier::ZeroOrMore { min, max } => {
+            let hi = (*max).min(profile.repetition_bounds.1);
+            if *min < hi {
+                tape_map.push_repetition(offset, *min, hi);
+            }
+        }
+        Modifier::OneOrMore { min, max } => {
+            let lo = (*min).max(1);
+            let hi = (*max).min(profile.repetition_bounds.1);
+            if lo < hi {
+                tape_map.push_repetition(offset, lo, hi);
+            }
+        }
+    }
 }
 
 fn resolve_modifier_gen(
@@ -241,6 +299,8 @@ fn expand_production_dec(
 
     eligible_alts(grammar, prod, remaining, eligible_buf);
 
+    let tape_start = reader.offset();
+
     let raw = reader.choose(n_alts);
     let alt_idx = if eligible_buf.is_empty() || eligible_buf.contains(&raw) {
         raw
@@ -258,6 +318,8 @@ fn expand_production_dec(
     }
     ctx.depth -= 1;
 
+    ctx.tape_map.push(tape_start, reader.offset() - tape_start, node_id, prod_id);
+
     Ok(node_id)
 }
 
@@ -270,6 +332,7 @@ fn expand_symbol_ref_dec(
     parent: NodeId,
     eligible_buf: &mut Vec<usize>,
 ) -> Result<(), GenerateError> {
+    record_modifier(&sym_ref.modifier, profile, reader.offset(), &mut ctx.tape_map);
     let count = resolve_modifier_dec(&sym_ref.modifier, profile, reader);
 
     for _ in 0..count {
