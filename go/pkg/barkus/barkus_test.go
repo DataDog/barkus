@@ -97,3 +97,58 @@ func TestClosedGenerator(t *testing.T) {
 		t.Fatal("expected error on closed generator")
 	}
 }
+
+func TestGenerateWithTape(t *testing.T) {
+	g, err := NewGenerator(`start = "a" | "b" | "c" ;`, 42, 0)
+	if err != nil {
+		t.Fatalf("NewGenerator: %v", err)
+	}
+	defer g.Close()
+
+	buf := make([]byte, 1024)
+	tapeBuf := make([]byte, 1024)
+	out, tape, err := g.GenerateWithTape(buf, tapeBuf)
+	if err != nil {
+		t.Fatalf("GenerateWithTape: %v", err)
+	}
+	if len(out) == 0 {
+		t.Error("expected non-empty output")
+	}
+	if len(tape) == 0 {
+		t.Error("expected non-empty tape")
+	}
+}
+
+func TestDecodeRoundtrip(t *testing.T) {
+	grammar := `start = "a" | "b" | "c" ;`
+
+	g, err := NewGenerator(grammar, 42, 0)
+	if err != nil {
+		t.Fatalf("NewGenerator: %v", err)
+	}
+	defer g.Close()
+
+	buf := make([]byte, 1024)
+	tapeBuf := make([]byte, 1024)
+	out, tape, err := g.GenerateWithTape(buf, tapeBuf)
+	if err != nil {
+		t.Fatalf("GenerateWithTape: %v", err)
+	}
+
+	decoded, err := Decode(grammar, tape, 0)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+
+	if string(out) != string(decoded) {
+		t.Errorf("roundtrip mismatch: generated %q, decoded %q", string(out), string(decoded))
+	}
+}
+
+func TestDecodeInvalidTape(t *testing.T) {
+	// An empty tape should fail
+	_, err := Decode(`start = "hello" ;`, nil, 0)
+	if err == nil {
+		t.Fatal("expected error for nil tape")
+	}
+}
