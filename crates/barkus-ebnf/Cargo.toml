@@ -1,0 +1,4 @@
+[package]
+name = "barkus-ebnf"
+version = "0.1.0"
+edition = "2021"
