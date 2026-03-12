@@ -1,0 +1,5 @@
+# A simple arithmetic PEG grammar
+Expr    <- Term (('+' / '-') Term)*
+Term    <- Factor (('*' / '/') Factor)*
+Factor  <- Number / '(' Expr ')'
+Number  <- [0-9]+

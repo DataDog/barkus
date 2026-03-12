@@ -1,0 +1,9 @@
+start = rows ;
+
+rows = row | row "\n" rows ;
+row = fields ;
+fields = field | field "," fields ;
+field = word | "\"" word "\"" ;
+word = letter | letter word ;
+letter = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"
+       | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" ;

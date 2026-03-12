@@ -1,0 +1,19 @@
+start = scheme "://" host path [ "?" query ] ;
+
+scheme = "http" | "https" | "ftp" ;
+host = hostname | hostname ":" port ;
+hostname = label | label "." hostname ;
+label = alpha | alpha alphanums ;
+alphanums = alphanum | alphanum alphanums ;
+alphanum = alpha | digit ;
+alpha = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i"
+      | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" ;
+digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+
+port = digit | digit digit | digit digit digit digit ;
+
+path = "/" | "/" segment path ;
+segment = alpha | alpha alphanums ;
+
+query = param | param "&" query ;
+param = alpha "=" alpha ;
