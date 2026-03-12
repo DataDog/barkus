@@ -15,8 +15,9 @@ pub fn generate(
 ) -> Result<(Ast, DecisionTape), GenerateError> {
     let mut ctx = GenCtx::new(profile);
     let mut writer = TapeWriter::new(profile.validity_mode);
+    let mut eligible_buf = Vec::new();
 
-    let root = expand_production_gen(grammar, profile, grammar.start, &mut ctx, &mut writer, rng)?;
+    let root = expand_production_gen(grammar, profile, grammar.start, &mut ctx, &mut writer, rng, &mut eligible_buf)?;
     ctx.ast.root = root;
 
     Ok((ctx.ast, writer.finish()))
@@ -30,8 +31,9 @@ pub fn decode(
 ) -> Result<Ast, GenerateError> {
     let mut ctx = GenCtx::new(profile);
     let mut reader = TapeReader::new(tape);
+    let mut eligible_buf = Vec::new();
 
-    let root = expand_production_dec(grammar, profile, grammar.start, &mut ctx, &mut reader)?;
+    let root = expand_production_dec(grammar, profile, grammar.start, &mut ctx, &mut reader, &mut eligible_buf)?;
     ctx.ast.root = root;
 
     Ok(ctx.ast)
@@ -79,6 +81,7 @@ fn expand_production_gen(
     ctx: &mut GenCtx,
     writer: &mut TapeWriter,
     rng: &mut impl Rng,
+    eligible_buf: &mut Vec<usize>,
 ) -> Result<NodeId, GenerateError> {
     if ctx.depth >= ctx.max_depth {
         return Err(GenerateError::BudgetExhausted {
@@ -91,25 +94,26 @@ fn expand_production_gen(
     let remaining = ctx.max_depth - ctx.depth - 1;
     let n_alts = prod.alternatives.len();
 
-    let eligible = eligible_alts(grammar, prod, remaining);
+    eligible_alts(grammar, prod, remaining, eligible_buf);
 
-    let alt_idx = if eligible.is_empty() {
+    let alt_idx = if eligible_buf.is_empty() {
         let chosen = rng.gen_range(0..n_alts);
         writer.write_choice(chosen, n_alts, rng);
         chosen
     } else {
-        let chosen_eligible = rng.gen_range(0..eligible.len());
-        let alt_idx = eligible[chosen_eligible];
+        let chosen_eligible = rng.gen_range(0..eligible_buf.len());
+        let alt_idx = eligible_buf[chosen_eligible];
         writer.write_choice(alt_idx, n_alts, rng);
         alt_idx
     };
 
     let node_id = ctx.ast.new_node(AstNodeKind::Production(prod_id));
-    let alt_symbols: Vec<_> = prod.alternatives[alt_idx].symbols.clone();
+    let n_syms = grammar.productions[prod_id].alternatives[alt_idx].symbols.len();
 
     ctx.depth += 1;
-    for sym_ref in &alt_symbols {
-        expand_symbol_ref_gen(grammar, profile, sym_ref, ctx, writer, rng, node_id)?;
+    for i in 0..n_syms {
+        let sym_ref = grammar.productions[prod_id].alternatives[alt_idx].symbols[i].clone();
+        expand_symbol_ref_gen(grammar, profile, &sym_ref, ctx, writer, rng, node_id, eligible_buf)?;
     }
     ctx.depth -= 1;
 
@@ -124,11 +128,12 @@ fn expand_symbol_ref_gen(
     writer: &mut TapeWriter,
     rng: &mut impl Rng,
     parent: NodeId,
+    eligible_buf: &mut Vec<usize>,
 ) -> Result<(), GenerateError> {
     let count = resolve_modifier_gen(&sym_ref.modifier, profile, writer, rng);
 
     for _ in 0..count {
-        let child = expand_symbol_gen(grammar, profile, sym_ref.symbol, ctx, writer, rng)?;
+        let child = expand_symbol_gen(grammar, profile, sym_ref.symbol, ctx, writer, rng, eligible_buf)?;
         ctx.ast.add_child(parent, child);
     }
     Ok(())
@@ -170,6 +175,7 @@ fn expand_symbol_gen(
     ctx: &mut GenCtx,
     writer: &mut TapeWriter,
     rng: &mut impl Rng,
+    eligible_buf: &mut Vec<usize>,
 ) -> Result<NodeId, GenerateError> {
     match &grammar.symbols[sym_id] {
         Symbol::Terminal(tk) => {
@@ -179,7 +185,7 @@ fn expand_symbol_gen(
         }
         Symbol::NonTerminal(pid) => {
             let pid = *pid;
-            expand_production_gen(grammar, profile, pid, ctx, writer, rng)
+            expand_production_gen(grammar, profile, pid, ctx, writer, rng, eligible_buf)
         }
     }
 }
@@ -188,19 +194,14 @@ fn emit_terminal_gen(tk: &TerminalKind, writer: &mut TapeWriter, rng: &mut impl 
     match tk {
         TerminalKind::Literal(b) => b.clone(),
         TerminalKind::CharClass { ranges, negated } => {
-            let byte = rng.gen_range(0u8..=255);
-            // No tape byte for char class — deterministic from literal or use rng directly.
-            // Actually we need tape determinism, so write the byte.
-            writer.write_choice(byte as usize, 256, rng);
-            let in_range = ranges.iter().any(|&(lo, hi)| byte >= lo && byte <= hi);
-            let valid = if *negated { !in_range } else { in_range };
-            if valid {
-                vec![byte]
-            } else if !ranges.is_empty() {
-                vec![ranges[0].0]
-            } else {
-                vec![0]
+            let valid_bytes = collect_char_class_bytes(ranges, *negated);
+            if valid_bytes.is_empty() {
+                writer.write_choice(0, 1, rng);
+                return vec![0];
             }
+            let idx = rng.gen_range(0..valid_bytes.len());
+            writer.write_choice(idx, valid_bytes.len(), rng);
+            vec![valid_bytes[idx]]
         }
         TerminalKind::AnyByte => {
             let byte = rng.gen_range(0u8..=255);
@@ -225,6 +226,7 @@ fn expand_production_dec(
     prod_id: ProductionId,
     ctx: &mut GenCtx,
     reader: &mut TapeReader<'_>,
+    eligible_buf: &mut Vec<usize>,
 ) -> Result<NodeId, GenerateError> {
     if ctx.depth >= ctx.max_depth {
         return Err(GenerateError::BudgetExhausted {
@@ -237,21 +239,22 @@ fn expand_production_dec(
     let remaining = ctx.max_depth - ctx.depth - 1;
     let n_alts = prod.alternatives.len();
 
-    let eligible = eligible_alts(grammar, prod, remaining);
+    eligible_alts(grammar, prod, remaining, eligible_buf);
 
     let raw = reader.choose(n_alts);
-    let alt_idx = if eligible.is_empty() || eligible.contains(&raw) {
+    let alt_idx = if eligible_buf.is_empty() || eligible_buf.contains(&raw) {
         raw
     } else {
-        eligible[raw % eligible.len()]
+        eligible_buf[raw % eligible_buf.len()]
     };
 
     let node_id = ctx.ast.new_node(AstNodeKind::Production(prod_id));
-    let alt_symbols: Vec<_> = prod.alternatives[alt_idx].symbols.clone();
+    let n_syms = grammar.productions[prod_id].alternatives[alt_idx].symbols.len();
 
     ctx.depth += 1;
-    for sym_ref in &alt_symbols {
-        expand_symbol_ref_dec(grammar, profile, sym_ref, ctx, reader, node_id)?;
+    for i in 0..n_syms {
+        let sym_ref = grammar.productions[prod_id].alternatives[alt_idx].symbols[i].clone();
+        expand_symbol_ref_dec(grammar, profile, &sym_ref, ctx, reader, node_id, eligible_buf)?;
     }
     ctx.depth -= 1;
 
@@ -265,11 +268,12 @@ fn expand_symbol_ref_dec(
     ctx: &mut GenCtx,
     reader: &mut TapeReader<'_>,
     parent: NodeId,
+    eligible_buf: &mut Vec<usize>,
 ) -> Result<(), GenerateError> {
     let count = resolve_modifier_dec(&sym_ref.modifier, profile, reader);
 
     for _ in 0..count {
-        let child = expand_symbol_dec(grammar, profile, sym_ref.symbol, ctx, reader)?;
+        let child = expand_symbol_dec(grammar, profile, sym_ref.symbol, ctx, reader, eligible_buf)?;
         ctx.ast.add_child(parent, child);
     }
     Ok(())
@@ -301,6 +305,7 @@ fn expand_symbol_dec(
     sym_id: SymbolId,
     ctx: &mut GenCtx,
     reader: &mut TapeReader<'_>,
+    eligible_buf: &mut Vec<usize>,
 ) -> Result<NodeId, GenerateError> {
     match &grammar.symbols[sym_id] {
         Symbol::Terminal(tk) => {
@@ -310,7 +315,7 @@ fn expand_symbol_dec(
         }
         Symbol::NonTerminal(pid) => {
             let pid = *pid;
-            expand_production_dec(grammar, profile, pid, ctx, reader)
+            expand_production_dec(grammar, profile, pid, ctx, reader, eligible_buf)
         }
     }
 }
@@ -319,16 +324,13 @@ fn emit_terminal_dec(tk: &TerminalKind, reader: &mut TapeReader<'_>) -> Vec<u8> 
     match tk {
         TerminalKind::Literal(b) => b.clone(),
         TerminalKind::CharClass { ranges, negated } => {
-            let byte = reader.choose(256) as u8;
-            let in_range = ranges.iter().any(|&(lo, hi)| byte >= lo && byte <= hi);
-            let valid = if *negated { !in_range } else { in_range };
-            if valid {
-                vec![byte]
-            } else if !ranges.is_empty() {
-                vec![ranges[0].0]
-            } else {
-                vec![0]
+            let valid_bytes = collect_char_class_bytes(ranges, *negated);
+            if valid_bytes.is_empty() {
+                reader.choose(1);
+                return vec![0];
             }
+            let idx = reader.choose(valid_bytes.len());
+            vec![valid_bytes[idx]]
         }
         TerminalKind::AnyByte => {
             let byte = reader.choose(256) as u8;
@@ -349,28 +351,38 @@ fn eligible_alts(
     grammar: &GrammarIr,
     prod: &crate::ir::grammar::Production,
     remaining: u32,
-) -> Vec<usize> {
-    prod.alternatives
-        .iter()
-        .enumerate()
-        .filter(|(_, alt)| {
-            alt.symbols.iter().all(|sr| {
-                let required = match &sr.modifier {
-                    Modifier::Optional => false,
-                    Modifier::ZeroOrMore { min, .. } => *min > 0,
-                    _ => true,
-                };
-                if !required {
-                    return true;
+    buf: &mut Vec<usize>,
+) {
+    buf.clear();
+    for (i, alt) in prod.alternatives.iter().enumerate() {
+        let ok = alt.symbols.iter().all(|sr| {
+            let required = match &sr.modifier {
+                Modifier::Optional => false,
+                Modifier::ZeroOrMore { min, .. } => *min > 0,
+                _ => true,
+            };
+            if !required {
+                return true;
+            }
+            match &grammar.symbols[sr.symbol] {
+                Symbol::Terminal(_) => true,
+                Symbol::NonTerminal(pid) => {
+                    grammar.productions[*pid].attrs.min_depth <= remaining
                 }
-                match &grammar.symbols[sr.symbol] {
-                    Symbol::Terminal(_) => true,
-                    Symbol::NonTerminal(pid) => {
-                        grammar.productions[*pid].attrs.min_depth <= remaining
-                    }
-                }
-            })
-        })
-        .map(|(i, _)| i)
-        .collect()
+            }
+        });
+        if ok {
+            buf.push(i);
+        }
+    }
+}
+
+/// Collect all valid bytes for a character class into a Vec, for uniform sampling.
+fn collect_char_class_bytes(ranges: &[(u8, u8)], negated: bool) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for b in 0u8..=255 {
+        let in_range = ranges.iter().any(|&(lo, hi)| b >= lo && b <= hi);
+        if negated { !in_range } else { in_range }.then(|| bytes.push(b));
+    }
+    bytes
 }

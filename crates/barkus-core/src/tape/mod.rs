@@ -110,9 +110,15 @@ impl TapeWriter {
         if n <= 1 {
             return;
         }
+        // When n >= 256, every byte value is a distinct choice — just push directly.
+        if n >= 256 {
+            self.bytes.push(chosen as u8);
+            return;
+        }
         // Pick a random byte that maps to `chosen` via `byte % n`.
+        // Use wrapping arithmetic to avoid overflow when the result would exceed 255.
         let base = rng.gen_range(0u8..=255);
-        let byte = base - (base % n as u8) + chosen as u8;
+        let byte = base.wrapping_sub(base % n as u8).wrapping_add(chosen as u8);
         self.bytes.push(byte);
     }
 
@@ -124,7 +130,7 @@ impl TapeWriter {
         let range = max - min + 1;
         let offset = count - min;
         let base = rng.gen_range(0u8..=255);
-        let byte = base - (base % range as u8) + offset as u8;
+        let byte = base.wrapping_sub(base % range as u8).wrapping_add(offset as u8);
         self.bytes.push(byte);
     }
 
