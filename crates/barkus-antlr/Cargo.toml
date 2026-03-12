@@ -2,3 +2,7 @@
 name = "barkus-antlr"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+barkus-core = { path = "../barkus-core" }
+barkus-parser-common = { path = "../barkus-parser-common" }
