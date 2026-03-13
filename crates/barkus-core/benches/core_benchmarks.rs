@@ -75,6 +75,7 @@ fn build_small_grammar() -> GrammarIr {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -257,6 +258,7 @@ fn build_medium_grammar() -> GrammarIr {
         productions,
         symbols,
         start: p_value,
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -331,6 +333,7 @@ fn build_large_grammar() -> GrammarIr {
         productions,
         symbols,
         start: prod_ids[0],
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir

@@ -59,6 +59,7 @@ fn simple_literal_grammar() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -85,6 +86,7 @@ fn choice_grammar() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -130,6 +132,7 @@ fn repetition_grammar() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -168,6 +171,7 @@ fn recursive_grammar_depth_bounded() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -204,6 +208,7 @@ fn generate_decode_roundtrip() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -236,6 +241,7 @@ fn budget_max_depth_enforced() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -276,6 +282,7 @@ fn tape_locality() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -351,6 +358,7 @@ fn distribution_alternation_4_chars() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -385,6 +393,7 @@ fn distribution_char_class_digits() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -423,6 +432,7 @@ fn distribution_alternation_13_chars() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -460,6 +470,7 @@ fn budget_max_total_nodes_enforced() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 

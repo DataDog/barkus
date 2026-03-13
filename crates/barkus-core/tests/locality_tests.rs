@@ -82,6 +82,7 @@ fn locality_sequence_of_choices() {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -153,6 +154,7 @@ fn locality_prefix_stable_under_suffix_mutation() {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -215,6 +217,7 @@ fn locality_suffix_stable_under_prefix_mutation() {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -266,6 +269,7 @@ fn locality_recursive_grammar() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -376,6 +380,7 @@ fn locality_repetition_count_isolated() {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -469,6 +474,7 @@ fn locality_many_decisions_single_flip() {
         productions,
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
