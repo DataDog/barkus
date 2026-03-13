@@ -305,6 +305,139 @@ fn tape_locality() {
     assert!(diff_count <= 1);
 }
 
+// ── Distribution tests ──
+
+/// Helper: generate N samples from a grammar (one per seed 0..N) and return
+/// the serialized byte output of each.
+fn generate_samples(ir: &GrammarIr, n: u64) -> Vec<Vec<u8>> {
+    let profile = Profile::default();
+    (0..n)
+        .map(|seed| {
+            let mut rng = SmallRng::seed_from_u64(seed);
+            let (ast, _, _) = generate(ir, &profile, &mut rng).unwrap();
+            ast.serialize()
+        })
+        .collect()
+}
+
+/// Assert each key in `counts` appears between `lo_pct`% and `hi_pct`% of `total`.
+fn assert_uniform(counts: &std::collections::HashMap<Vec<u8>, usize>, total: usize, lo_pct: f64, hi_pct: f64) {
+    for (key, &count) in counts {
+        let pct = count as f64 / total as f64 * 100.0;
+        assert!(
+            pct >= lo_pct && pct <= hi_pct,
+            "key {:?} appeared {count}/{total} ({pct:.1}%), expected between {lo_pct}% and {hi_pct}%",
+            String::from_utf8_lossy(key),
+        );
+    }
+}
+
+/// EBNF-style alternation: S -> "a" | "b" | "c" | "d"
+/// Each character should appear ~25% of the time.
+#[test]
+fn distribution_alternation_4_chars() {
+    let mut symbols = Vec::new();
+    let alts: Vec<_> = [b"a", b"b", b"c", b"d"]
+        .iter()
+        .map(|ch| simple_alt(lit_sym(&mut symbols, *ch)))
+        .collect();
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: alts,
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+    };
+    compute_min_depths(&mut ir);
+
+    let n = 10_000;
+    let samples = generate_samples(&ir, n);
+    assert_eq!(samples.len(), n as usize);
+
+    let mut counts = std::collections::HashMap::new();
+    for s in &samples {
+        *counts.entry(s.clone()).or_insert(0usize) += 1;
+    }
+    assert_eq!(counts.len(), 4, "expected exactly 4 distinct outputs");
+    assert_uniform(&counts, n as usize, 20.0, 30.0);
+}
+
+/// CharClass terminal: [0-9] — each digit should appear ~10% of the time.
+#[test]
+fn distribution_char_class_digits() {
+    let mut symbols = Vec::new();
+    let id = SymbolId(symbols.len() as u32);
+    symbols.push(Symbol::Terminal(TerminalKind::CharClass {
+        ranges: vec![(b'0', b'9')],
+        negated: false,
+    }));
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![simple_alt(id)],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+    };
+    compute_min_depths(&mut ir);
+
+    let n = 10_000;
+    let samples = generate_samples(&ir, n);
+
+    let mut counts = std::collections::HashMap::new();
+    for s in &samples {
+        *counts.entry(s.clone()).or_insert(0usize) += 1;
+    }
+    assert_eq!(counts.len(), 10, "expected exactly 10 distinct digits");
+    assert_uniform(&counts, n as usize, 6.0, 14.0);
+}
+
+/// Larger EBNF char set: 13 alternatives (a-f, x-z, 0-3).
+/// Each should appear ~7.7% of the time.
+#[test]
+fn distribution_alternation_13_chars() {
+    let chars: Vec<&[u8]> = vec![
+        b"a", b"b", b"c", b"d", b"e", b"f",
+        b"x", b"y", b"z",
+        b"0", b"1", b"2", b"3",
+    ];
+    let mut symbols = Vec::new();
+    let alts: Vec<_> = chars
+        .iter()
+        .map(|ch| simple_alt(lit_sym(&mut symbols, *ch)))
+        .collect();
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: alts,
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+    };
+    compute_min_depths(&mut ir);
+
+    let n = 13_000;
+    let samples = generate_samples(&ir, n);
+
+    let mut counts = std::collections::HashMap::new();
+    for s in &samples {
+        *counts.entry(s.clone()).or_insert(0usize) += 1;
+    }
+    assert_eq!(counts.len(), 13, "expected exactly 13 distinct outputs");
+    // Expected ~7.7%, bounds ~4.6% to ~10.8% (±40% of expected)
+    assert_uniform(&counts, n as usize, 4.6, 10.8);
+}
+
 /// max_total_nodes enforcement
 #[test]
 fn budget_max_total_nodes_enforced() {
