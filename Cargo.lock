@@ -126,9 +126,13 @@ dependencies = [
 name = "barkus-ffi"
 version = "0.1.0"
 dependencies = [
+ "barkus-antlr",
  "barkus-core",
  "barkus-ebnf",
+ "barkus-sql",
  "rand",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
