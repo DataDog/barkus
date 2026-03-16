@@ -92,10 +92,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "barkus-arbitrary"
-version = "0.1.0"
-
-[[package]]
 name = "barkus-cli"
 version = "0.1.0"
 dependencies = [
@@ -136,10 +132,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "barkus-libafl"
-version = "0.1.0"
-
-[[package]]
 name = "barkus-parser-common"
 version = "0.1.0"
 dependencies = [
@@ -154,10 +146,6 @@ dependencies = [
  "barkus-core",
  "barkus-parser-common",
 ]
-
-[[package]]
-name = "barkus-proto"
-version = "0.1.0"
 
 [[package]]
 name = "barkus-sql"

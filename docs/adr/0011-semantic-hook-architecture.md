@@ -6,12 +6,12 @@ Proposed
 
 ## Context and Problem Statement
 
-Grammar-driven generation ([ADR-0002](0002-decision-tape-and-havoc-paradox.md), [ADR-0003](0003-grammar-frontend-architecture.md)) produces syntactically valid output but cannot enforce semantic constraints. For SQL, an identifier must name a real table; for Protobuf, a field number must be unique within its message. How should barkus allow domain-specific logic to intercept and override generation decisions without coupling the core engine to any particular domain?
+Grammar-driven generation ([ADR-0002](0002-decision-tape-and-havoc-paradox.md), [ADR-0003](0003-grammar-frontend-architecture.md)) produces syntactically valid output but cannot enforce semantic constraints. For SQL, an identifier must name a real table; a generated expression must type-check. How should barkus allow domain-specific logic to intercept and override generation decisions without coupling the core engine to any particular domain?
 
 ## Decision Drivers
 
 - `barkus-core` must remain Sans I/O and domain-agnostic ([ADR-0010](0010-sans-io-and-tiger-style.md)).
-- The mechanism must be zero-cost when no hooks are active — the common case for pure-grammar fuzzing must not pay for the SQL or Protobuf path.
+- The mechanism must be zero-cost when no hooks are active — the common case for pure-grammar fuzzing must not pay for the SQL path.
 - Hooks must compose with the decision tape: overridden decisions still consume tape bytes so that mutation and decode remain deterministic.
 - The same mechanism should handle both production-level semantic overrides (e.g., "when generating an identifier, pick from the current scope") and token pool expansion (e.g., "the IDENTIFIER lexer rule should produce table names, not random strings").
 
