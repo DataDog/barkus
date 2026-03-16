@@ -1,8 +1,6 @@
 package barkus
 
 /*
-#cgo LDFLAGS: ${SRCDIR}/../../../target/release/libbarkus_ffi.a
-#cgo darwin LDFLAGS: -framework Security
 #include <stdint.h>
 #include <stdlib.h>
 
