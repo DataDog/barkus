@@ -32,7 +32,7 @@ impl Default for Profile {
     fn default() -> Self {
         Self {
             validity_mode: ValidityMode::Strict,
-            max_depth: 10,
+            max_depth: 20,
             max_total_nodes: 10_000,
             repetition_bounds: (0, 5),
             dictionary: Vec::new(),

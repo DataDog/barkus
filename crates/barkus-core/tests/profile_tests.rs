@@ -3,7 +3,7 @@ use barkus_core::profile::{Profile, ValidityMode};
 #[test]
 fn profile_defaults() {
     let p = Profile::default();
-    assert_eq!(p.max_depth, 10);
+    assert_eq!(p.max_depth, 20);
     assert_eq!(p.max_total_nodes, 10_000);
     assert_eq!(p.repetition_bounds, (0, 5));
     assert_eq!(p.validity_mode, ValidityMode::Strict);

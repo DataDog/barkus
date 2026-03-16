@@ -97,7 +97,7 @@ e,"iaj",jm
 | `<grammar>` | Path to EBNF grammar file | required |
 | `--count` | Number of samples | 10 |
 | `--seed` | RNG seed (omit for random) | random |
-| `--max-depth` | Max derivation depth | 10 |
+| `--max-depth` | Max derivation depth | 20 |
 
 **Go** (`barkus-gen`):
 
@@ -126,6 +126,20 @@ if err != nil {
 }
 fmt.Println(string(out))
 ```
+
+## Coverage visualization
+
+`barkus-viz` generates coverage reports (text, HTML, or JSON) showing which grammar productions and alternatives your corpus exercises, plus hard-to-reach analysis and actionable recommendations to reduce failure rates:
+
+```bash
+# Text report to stdout
+cargo run --release -p barkus-viz -- fixtures/grammars/json.ebnf -n 100000
+
+# HTML report
+cargo run --release -p barkus-viz -- fixtures/grammars/json.ebnf -n 100000 --format=html -o report.html
+```
+
+See [`crates/barkus-viz/README.md`](crates/barkus-viz/README.md) for all options.
 
 ## Fixture grammars
 
