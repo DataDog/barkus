@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -30,11 +30,14 @@ barkus/
   Cargo.toml                    (workspace)
   crates/
     barkus-core/                IR, AST, decision tape codec, mutation engine, shrinker, FragmentDb
+    barkus-parser-common/       Shared tokenization and IR-building utilities
     barkus-antlr/               ANTLR v4 parser -> GrammarIr
     barkus-ebnf/                EBNF parser -> GrammarIr
     barkus-peg/                 PEG parser -> GrammarIr
     barkus-sql/                 SQL domain generator (GrammarIr + semantic hooks)
     barkus-ffi/                 C ABI for Go and other languages
+    barkus-cli/                 Rust CLI binary
+    barkus-viz/                 Coverage visualization tool
   go/                           Go bindings package
   docs/adr/                     Architecture decision records
   fuzz/                         Fuzz targets for self-testing
@@ -42,10 +45,13 @@ barkus/
 
 **Dependency graph:**
 ```
-barkus-core              <- std, serde, rand (no fuzzer deps)
-barkus-{antlr,ebnf,peg} <- barkus-core
-barkus-sql               <- barkus-core
-barkus-ffi               <- barkus-core + all frontends + libc
+barkus-core                <- std, serde, rand (no fuzzer deps)
+barkus-parser-common       <- barkus-core
+barkus-{antlr,ebnf,peg}   <- barkus-core, barkus-parser-common
+barkus-sql                 <- barkus-core, barkus-antlr
+barkus-ffi                 <- barkus-core + all frontends + libc
+barkus-cli                 <- barkus-core + all frontends + clap
+barkus-viz                 <- barkus-core + all frontends + clap
 ```
 
 ### Pros

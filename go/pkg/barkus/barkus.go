@@ -1,4 +1,4 @@
-// Package barkus provides Go bindings for the barkus EBNF fuzzer.
+// Package barkus provides Go bindings for the barkus grammar fuzzer.
 package barkus
 
 /*
@@ -28,14 +28,14 @@ import (
 	"unsafe"
 )
 
-// Generator compiles an EBNF grammar and generates samples from it.
+// Generator compiles a grammar and generates samples from it.
 type Generator struct {
 	handle unsafe.Pointer
 }
 
-// NewGenerator compiles the given EBNF source and returns a Generator.
+// NewGenerator compiles the given grammar source and returns a Generator.
 // seed controls the RNG (0 = random). maxDepth overrides the default
-// derivation depth limit (0 = default of 10).
+// derivation depth limit (0 = default of 20).
 func NewGenerator(source string, seed uint64, maxDepth uint32) (*Generator, error) {
 	src := []byte(source)
 	var srcPtr *C.uint8_t

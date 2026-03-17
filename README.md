@@ -1,6 +1,6 @@
 # Barkus
 
-Structure-aware fuzzer that generates samples from EBNF grammars. Write a grammar, get random valid outputs — useful for fuzz testing parsers, protocols, and file formats.
+Structure-aware fuzzer that generates samples from grammars (EBNF, ANTLR v4, PEG). Write a grammar, get random valid outputs — useful for fuzz testing parsers, protocols, and file formats.
 
 ## Quick start
 
@@ -94,19 +94,22 @@ e,"iaj",jm
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `<grammar>` | Path to EBNF grammar file | required |
+| `<grammar>` | Path to grammar file (`.ebnf`, `.g4`, `.peg`) | required |
 | `--count` | Number of samples | 10 |
 | `--seed` | RNG seed (omit for random) | random |
 | `--max-depth` | Max derivation depth | 20 |
+| `--start` | Override start rule name | first rule |
+| `--emit-tape` | Emit hex-encoded decision tapes to stderr | off |
 
 **Go** (`barkus-gen`):
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-grammar` | Path to EBNF grammar file | required |
+| `-grammar` | Path to grammar file | required |
 | `-count` | Number of samples | 10 |
 | `-seed` | RNG seed (0 = random) | 0 |
 | `-max-depth` | Max derivation depth (0 = default) | 0 |
+| `-emit-tape` | Emit hex-encoded decision tapes to stderr | off |
 
 ## Using the Go library
 
@@ -147,13 +150,12 @@ Sample grammars live in `fixtures/grammars/`:
 
 | Grammar | Generates |
 |---------|-----------|
-| `hello.ebnf` | `"hello"` or `"world"` |
-| `json.ebnf` | JSON values |
+| `json.ebnf` / `json.g4` | JSON values |
 | `csv.ebnf` | CSV rows |
-| `arithmetic.ebnf` | Math expressions |
-| `ipv4.ebnf` | IPv4 addresses |
+| `arithmetic.ebnf` / `arithmetic.peg` | Math expressions |
 | `url.ebnf` | URLs with query strings |
 | `sql-select.ebnf` | SQL SELECT statements |
+| `ottl.ebnf` / `ottl.peg` | OpenTelemetry Transformation Language |
 
 ## Development
 
