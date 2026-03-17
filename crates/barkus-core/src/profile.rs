@@ -32,9 +32,9 @@ impl Default for Profile {
     fn default() -> Self {
         Self {
             validity_mode: ValidityMode::Strict,
-            max_depth: 20,
-            max_total_nodes: 10_000,
-            repetition_bounds: (0, 5),
+            max_depth: 30,
+            max_total_nodes: 20_000,
+            repetition_bounds: (0, 3),
             dictionary: Vec::new(),
             havoc_intensity: 0.5,
             rule_overrides: HashMap::new(),

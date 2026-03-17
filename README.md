@@ -6,7 +6,7 @@ Structure-aware fuzzer that generates structured inputs from grammars (EBNF, ANT
 
 Barkus compiles a grammar into a normalized intermediate representation, then walks it to produce random valid outputs. Every generation decision (which alternative to pick, how many repetitions, which character in a class) is recorded onto a **decision tape** — a flat byte sequence where each decision is exactly one byte.
 
-This design is **fuzzer-friendly**: a single byte flip in the tape changes one structural decision without scrambling the rest of the output. Traditional byte-level fuzzing of grammar generators suffers from the *havoc paradox* — variable-width byte consumption means one mutation cascades into a completely different parse tree. Fixed-width tape encoding solves this: mutators like AFL and libFuzzer can operate directly on the tape with high locality.
+The intended workflow: **your fuzzer (AFL, libFuzzer, `go test -fuzz`, etc.) mutates the tape, and Barkus decodes it into a structured grammar output**. The tape is the fuzzer's corpus, optionnaly seed it with `barkus generate`, then let the fuzzer mutate the raw bytes. Because each tape byte maps to exactly one structural decision, a single byte changes one alternative choice or repetition count without scrambling the rest of the output. Traditional byte-level fuzzing of grammar generators suffers from the *havoc paradox* — variable-width byte consumption means one mutation cascades into a completely different parse tree. Fixed-width tape encoding solves this.
 
 The approach draws on research in grammar-aware fuzzing:
 
@@ -65,7 +65,7 @@ digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 ### Generate with the Rust CLI
 
 ```bash
-$ cargo run -p barkus-cli -- fixtures/grammars/json.ebnf --count 5 --seed 42
+$ cargo run -p barkus-cli -- generate fixtures/grammars/json.ebnf --count 5 --seed 42
 "d"
 null
 "fdxx"
@@ -74,10 +74,10 @@ true
 ```
 
 ```bash
-$ cargo run -p barkus-cli -- fixtures/grammars/url.ebnf --count 3 --seed 42
-ftp://o/?g=l&i=q&k=l&g=d&j=d&l=l
-https://d.h:7/e/r1g/?k=f
-https://q3fk7/?b=o&n=r&i=b&q=b
+$ cargo run -p barkus-cli -- generate fixtures/grammars/url.ebnf --count 3 --seed 42
+ftp://o/?g=l&i=q&k=l&g=d&j=d&n=q&r=p&m=d&h=d
+ftp://n.jn.l1:20/i7f/k/?j=e
+http://rgq2:13/b/?q=b
 ```
 
 ### Generate with the Go CLI
@@ -85,7 +85,7 @@ https://q3fk7/?b=o&n=r&i=b&q=b
 The Go CLI (`barkus-gen`) uses the same FFI library and produces identical output for the same seed:
 
 ```bash
-$ ./target/release/barkus-gen -grammar fixtures/grammars/json.ebnf -count 5 -seed 42
+$ ./target/release/barkus-gen generate -grammar fixtures/grammars/json.ebnf -count 5 -seed 42
 "d"
 null
 "fdxx"
@@ -94,7 +94,7 @@ true
 ```
 
 ```bash
-$ ./target/release/barkus-gen -grammar fixtures/grammars/csv.ebnf -count 3 -seed 42
+$ ./target/release/barkus-gen generate -grammar fixtures/grammars/csv.ebnf -count 3 -seed 42
 bk
 "h","lh",g
 gp,"d"
@@ -112,7 +112,7 @@ e,"iaj",jm
 | `<grammar>` | Path to grammar file (`.ebnf`, `.g4`, `.peg`) | required |
 | `--count` | Number of samples | 10 |
 | `--seed` | RNG seed (omit for random) | random |
-| `--max-depth` | Max derivation depth | 20 |
+| `--max-depth` | Max derivation depth | 30 |
 | `--start` | Override start rule name | first rule |
 | `--emit-tape` | Emit hex-encoded decision tapes to stderr | off |
 
@@ -235,14 +235,68 @@ func FuzzPostgresSQL(f *testing.F) {
 
 ## Coverage visualization
 
-`barkus-viz` generates coverage reports (text, HTML, or JSON) showing which grammar productions and alternatives your corpus exercises, plus hard-to-reach analysis and actionable recommendations to reduce failure rates:
+`barkus-viz` generates coverage reports (text, HTML, or JSON) from purely random tape generation — no coverage-guided fuzzer needed. This is useful for two things: **validating your grammar** (can every production and alternative actually be reached?) and **tuning budget parameters** before plugging the grammar into a real fuzzer. The distributions shown are from uniform random sampling, not from a coverage-aware mutator — a real fuzzer will explore more efficiently.
 
 ```bash
 # Text report to stdout
-cargo run --release -p barkus-viz -- fixtures/grammars/json.ebnf -n 100000
+cargo run --release -p barkus-viz -- fixtures/grammars/ottl.ebnf -n 10000 --seed 42
 
 # HTML report
-cargo run --release -p barkus-viz -- fixtures/grammars/json.ebnf -n 100000 --format=html -o report.html
+cargo run --release -p barkus-viz -- fixtures/grammars/ottl.ebnf -n 10000 --format=html -o report.html
+
+# JSON export
+cargo run --release -p barkus-viz -- fixtures/grammars/ottl.ebnf -n 10000 --format=json
+```
+
+Example output (OTTL grammar, 10k payloads):
+
+```
+barkus-viz Coverage Report
+Grammar: fixtures/grammars/ottl.ebnf
+
+  Payloads:            10,000
+  Failure rate:        13.91%  (1,391 failures)
+    ├ max depth exceeded:      0
+    └ max total nodes exceeded: 1,391
+  Production coverage: 100.0%  (77 / 77 hit)
+
+Suggested flags to reduce failures:
+    --max-nodes 100000       100% of failures are max-total-nodes exceeded (current: 20000)
+                             likely eliminates ~1k of 1k failures
+
+  Full command:
+    cargo run -p barkus-viz -- fixtures/grammars/ottl.ebnf --max-nodes 100000
+
+Depth Distribution
+   7 █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 798
+   9 ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 545
+  11 █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 52
+  ...
+  31 ████████████████████████████████████████ 6435
+  range: 7 – 31
+
+Production Coverage
+  Name                               Hits     Cov %  Alt distribution
+  ───────────────────────────────────────────────────────────────────────
+  WS                            5,592,836     85.6%  (single)
+  BOOLEAN_FACTOR                1,983,609     61.1%  (single)
+  BOOLEAN_PRIMARY               1,983,609     61.1%  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  BOOLEAN_VALUE                 1,486,123     61.1%  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  DIGIT                         1,156,622     76.9%  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ...
+  EDITOR_INVOCATION_STATEMENT       4,881     48.8%  (single)
+  WHERE_CLAUSE                      2,381     23.8%  (single)
+
+Hard-to-Reach Analysis
+  STARVED    MATH_PRIMARY alt 3
+             hit 23468 times, expected ~54768 (< 50% of uniform)
+  STARVED    BOOLEAN_VALUE alt 2
+             hit 239144 times, expected ~495374 (< 50% of uniform)
+  CHOKE      EDITOR_INVOCATION_STATEMENT
+             Only reachable via __anon_46 alt 0. If that path is cold, this is unreachable.
+  CHOKE      WHERE_CLAUSE
+             Only reachable via EDITOR_INVOCATION_STATEMENT alt 0. If that path is cold, this is unreachable.
+  ...
 ```
 
 See [`crates/barkus-viz/README.md`](crates/barkus-viz/README.md) for all options.
