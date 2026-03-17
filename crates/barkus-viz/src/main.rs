@@ -6,10 +6,12 @@ use std::process;
 use barkus_core::generate;
 use barkus_core::ir::GrammarIr;
 use barkus_core::profile::Profile;
+use barkus_core::tape::DecisionTape;
 use clap::Parser;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
+use barkus_viz::corpus;
 use barkus_viz::html;
 use barkus_viz::json;
 use barkus_viz::reachability;
@@ -65,6 +67,10 @@ struct Cli {
     /// Don't open the report in a browser (only used with --format=html)
     #[arg(long)]
     no_open: bool,
+
+    /// Load decision tapes from a corpus directory instead of generating randomly
+    #[arg(long)]
+    corpus: Option<PathBuf>,
 }
 
 fn main() {
@@ -72,36 +78,69 @@ fn main() {
 
     let (grammar, profile) = compile_and_configure(&cli.grammar, cli.start.as_deref(), cli.max_depth, cli.max_nodes);
 
-    let seed = cli.seed.unwrap_or_else(|| rand::random());
-    let mut rng = SmallRng::seed_from_u64(seed);
-
     let is_tty = io::stderr().is_terminal();
-
-    let mut collector = StatsCollector::new_with_capacity(&grammar, cli.count);
     let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-    for i in 0..cli.count {
-        if is_tty && i % 1_000 == 0 {
-            let frame = spinner[(i as usize / 1_000) % spinner.len()];
-            let _ = write!(io::stderr(), "\r\x1b[2K  {frame} {i} / {} payloads generated", cli.count);
-            let _ = io::stderr().flush();
-        } else if !is_tty && i > 0 && i % 10_000 == 0 {
-            eprintln!("  {} / {} payloads generated", i, cli.count);
-        }
-        match generate::generate(&grammar, &profile, &mut rng) {
-            Ok((ast, tape, tape_map)) => {
-                collector.record_payload(&ast, &tape, &tape_map);
+    let (count, collector, verb) = if let Some(ref corpus_dir) = cli.corpus {
+        let tape_bytes_list = corpus::load_corpus_dir(corpus_dir).unwrap_or_else(|e| {
+            eprintln!("error: {e}");
+            process::exit(1);
+        });
+        let count = tape_bytes_list.len() as u64;
+        let mut collector = StatsCollector::new_with_capacity(&grammar, count);
+
+        for (i, tape_bytes) in tape_bytes_list.into_iter().enumerate() {
+            let i = i as u64;
+            if is_tty && i % 1_000 == 0 {
+                let frame = spinner[(i as usize / 1_000) % spinner.len()];
+                let _ = write!(io::stderr(), "\r\x1b[2K  {frame} {i} / {count} payloads decoded");
+                let _ = io::stderr().flush();
+            } else if !is_tty && i > 0 && i % 10_000 == 0 {
+                eprintln!("  {i} / {count} payloads decoded");
             }
-            Err(e) => {
-                collector.record_failure(&e);
+            match generate::decode(&grammar, &profile, &tape_bytes) {
+                Ok((ast, tape_map)) => {
+                    let tape = DecisionTape { bytes: tape_bytes };
+                    collector.record_payload(&ast, &tape, &tape_map);
+                }
+                Err(e) => {
+                    collector.record_failure(&e);
+                }
             }
         }
-    }
+
+        (count, collector, "decoded")
+    } else {
+        let seed = cli.seed.unwrap_or_else(|| rand::random());
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let count = cli.count;
+        let mut collector = StatsCollector::new_with_capacity(&grammar, count);
+
+        for i in 0..count {
+            if is_tty && i % 1_000 == 0 {
+                let frame = spinner[(i as usize / 1_000) % spinner.len()];
+                let _ = write!(io::stderr(), "\r\x1b[2K  {frame} {i} / {count} payloads generated");
+                let _ = io::stderr().flush();
+            } else if !is_tty && i > 0 && i % 10_000 == 0 {
+                eprintln!("  {i} / {count} payloads generated");
+            }
+            match generate::generate(&grammar, &profile, &mut rng) {
+                Ok((ast, tape, tape_map)) => {
+                    collector.record_payload(&ast, &tape, &tape_map);
+                }
+                Err(e) => {
+                    collector.record_failure(&e);
+                }
+            }
+        }
+
+        (count, collector, "generated")
+    };
 
     if is_tty {
-        eprint!("\r\x1b[2K  ✓ {} / {} payloads generated\n", cli.count, cli.count);
+        eprint!("\r\x1b[2K  ✓ {count} / {count} payloads {verb}\n");
     } else {
-        eprintln!("  {} / {} payloads generated — done.", cli.count, cli.count);
+        eprintln!("  {count} / {count} payloads {verb} — done.");
     }
 
     let stats = collector.finalize(&grammar);

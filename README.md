@@ -4,9 +4,21 @@ Structure-aware fuzzer that generates structured inputs from grammars (EBNF, ANT
 
 ## How it works
 
+```mermaid
+flowchart LR
+    G["Grammar<br/>(EBNF, ANTLR, PEG)"] -->|compile| IR["Normalized IR"]
+    IR --> D["barkus decode"]
+    F["Fuzzer<br/>(AFL, libFuzzer,<br/>go test -fuzz)"] -->|mutate| T["Decision Tape<br/>[0A 3F 01 B7 …]"]
+    T --> D
+    D --> O["Structured Output<br/>(JSON, SQL, OTTL, …)"]
+    O --> SUT["System Under Test"]
+    IR --> S["barkus generate"]
+    S -->|seed| T
+```
+
 Barkus compiles a grammar into a normalized intermediate representation, then walks it to produce random valid outputs. Every generation decision (which alternative to pick, how many repetitions, which character in a class) is recorded onto a **decision tape** — a flat byte sequence where each decision is exactly one byte.
 
-The intended workflow: **your fuzzer (AFL, libFuzzer, `go test -fuzz`, etc.) mutates the tape, and Barkus decodes it into a structured grammar output**. The tape is the fuzzer's corpus, optionnaly seed it with `barkus generate`, then let the fuzzer mutate the raw bytes. Because each tape byte maps to exactly one structural decision, a single byte changes one alternative choice or repetition count without scrambling the rest of the output. Traditional byte-level fuzzing of grammar generators suffers from the *havoc paradox* — variable-width byte consumption means one mutation cascades into a completely different parse tree. Fixed-width tape encoding solves this.
+The intended workflow: **your fuzzer mutates the tape, and Barkus decodes it into a structured grammar output**. Seed the corpus with `barkus generate`, then let the fuzzer (AFL, libFuzzer, `go test -fuzz`, etc.) mutate the raw bytes. Because each tape byte maps to exactly one structural decision, a single byte flip changes one alternative choice or repetition count without scrambling the rest of the output. Traditional byte-level fuzzing of grammar generators suffers from the *havoc paradox* — variable-width byte consumption means one mutation cascades into a completely different parse tree. Fixed-width tape encoding solves this.
 
 The approach draws on research in grammar-aware fuzzing:
 
@@ -235,7 +247,11 @@ func FuzzPostgresSQL(f *testing.F) {
 
 ## Coverage visualization
 
-`barkus-viz` generates coverage reports (text, HTML, or JSON) from purely random tape generation — no coverage-guided fuzzer needed. This is useful for two things: **validating your grammar** (can every production and alternative actually be reached?) and **tuning budget parameters** before plugging the grammar into a real fuzzer. The distributions shown are from uniform random sampling, not from a coverage-aware mutator — a real fuzzer will explore more efficiently.
+`barkus-viz` generates coverage reports (text, HTML, or JSON) from both your randomly generated grammar or, if you have an existing corpus (of tape) from the directory you provide (supporting both Go fuzz file format and plain tape files).
+
+The uniform generation is useful for two things: **validating your grammar** (can every production and alternative actually be reached?) and **tuning budget parameters** before plugging the grammar into a real fuzzer.
+
+The tape-based corpus visualisation loading is helpful for discovering where your fuzzer struggles to cover. It's not a replacement of your code coverage visualisation but another tool in your toolbox.
 
 ```bash
 # Text report to stdout
