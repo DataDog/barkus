@@ -1,3 +1,7 @@
 target/
 barkus-gen
 *.html
+
+# cargo-fuzz artifacts and corpus
+fuzz/artifacts/
+fuzz/corpus/
