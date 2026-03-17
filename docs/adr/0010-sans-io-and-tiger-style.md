@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -36,7 +36,7 @@ Chosen option: **Option 1 — Sans I/O + Tiger Style.**
 - Error diagnostics are returned as structured types — the caller decides how to report them.
 - Random bytes come from caller-provided `&mut impl Rng` or `&[u8]` tape — the caller owns the entropy source.
 
-Only the adapter crates (`barkus-ffi`, `barkus-libafl`) and the Go bindings perform I/O. The FFI layer reads nothing from disk; it receives all data as byte slices from the caller.
+Only the adapter crate (`barkus-ffi`) and the Go bindings perform I/O. The FFI layer reads nothing from disk; it receives all data as byte slices from the caller.
 
 This makes `barkus-core`:
 - **Deterministic**: same inputs → same outputs, always.

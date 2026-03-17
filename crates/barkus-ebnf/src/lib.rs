@@ -195,7 +195,7 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ParseError> {
             let start_col = col;
             let mut num = 0u32;
             while pos < chars.len() && chars[pos].is_ascii_digit() {
-                num = num * 10 + (chars[pos] as u32 - '0' as u32);
+                num = num.saturating_mul(10).saturating_add(chars[pos] as u32 - '0' as u32);
                 pos += 1;
                 col += 1;
             }
@@ -258,9 +258,17 @@ impl BuildItem for RawItem {
             }
             RawItem::Group(alts) => builder.build_group(alts, refs)?,
             RawItem::Factor(n, inner) => {
-                for _ in 0..*n {
-                    Self::build_item(builder, inner, refs)?;
-                }
+                // Emit as bounded repetition to avoid pathological IR
+                // expansion from nested factors (e.g. 8 * 4 * 8 * ...).
+                let count = *n;
+                let inner_sid = builder.build_single_symbol::<Self>(inner)?;
+                refs.push(SymbolRef {
+                    symbol: inner_sid,
+                    modifier: Modifier::ZeroOrMore {
+                        min: count,
+                        max: count,
+                    },
+                });
             }
         }
         Ok(())

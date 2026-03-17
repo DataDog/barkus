@@ -7,6 +7,22 @@ pub struct GrammarIr {
     pub productions: Vec<Production>,
     pub symbols: Vec<Symbol>,
     pub start: ProductionId,
+    /// Token pool entries, indexed by [`PoolId`]. Each entry represents a lexer rule's
+    /// expansion alternatives, used by [`TerminalKind::TokenPool`] during generation.
+    /// Empty for grammars that don't use split lexer/parser files.
+    #[serde(default)]
+    pub token_pools: Vec<TokenPoolEntry>,
+}
+
+/// A token pool entry representing a lexer rule's expansion alternatives.
+///
+/// During generation, `TerminalKind::TokenPool(pool_id)` indexes into `GrammarIr::token_pools`
+/// to find the pool entry, then uses a tape byte to select among the alternatives.
+/// Semantic hooks can override this expansion via [`SemanticHooks::on_token_pool`](crate::hooks::SemanticHooks::on_token_pool).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenPoolEntry {
+    pub name: String,
+    pub alternatives: Vec<Alternative>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

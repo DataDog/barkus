@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -30,7 +30,6 @@ Frontend crates each expose: `compile(source, options) -> Result<GrammarIr>`.
 - **`barkus-antlr`**: ANTLR v4 combined/split grammars. Actions stripped but logged.
 - **`barkus-ebnf`**: ISO 14977 EBNF and common variants.
 - **`barkus-peg`**: PEG grammars (Bryan Ford notation and DataDog `peg` variant).
-- **`barkus-proto`**: `.proto` files (proto2/proto3) → `SchemaIr` (per [ADR-0001](0001-normalized-intermediate-representation.md)).
 
 **Sidecar configuration** (JSON, external to grammar source — JSON chosen for cross-language portability, especially Go FFI):
 ```json

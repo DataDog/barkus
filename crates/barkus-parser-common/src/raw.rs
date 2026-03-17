@@ -1,7 +1,9 @@
+#[derive(Clone)]
 pub struct RawGrammar<I> {
     pub rules: Vec<RawRule<I>>,
 }
 
+#[derive(Clone)]
 pub struct RawRule<I> {
     pub name: String,
     pub alternatives: Vec<RawAlternative<I>>,
@@ -9,6 +11,7 @@ pub struct RawRule<I> {
     pub col: usize,
 }
 
+#[derive(Clone)]
 pub struct RawAlternative<I> {
     pub items: Vec<I>,
 }

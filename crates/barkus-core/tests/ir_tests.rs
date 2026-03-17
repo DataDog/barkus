@@ -56,6 +56,7 @@ fn valid_ir_passes_validation() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     assert!(ir.validate().is_ok());
@@ -72,6 +73,7 @@ fn invalid_symbol_ref_caught() {
         }],
         symbols: vec![],
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     assert!(matches!(ir.validate(), Err(IrError::InvalidSymbolRef(_))));
@@ -91,6 +93,7 @@ fn invalid_production_ref_caught() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     assert!(matches!(
@@ -114,6 +117,7 @@ fn empty_alternative_caught() {
         }],
         symbols: vec![],
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     assert!(matches!(
@@ -128,6 +132,7 @@ fn missing_start_production() {
         productions: vec![],
         symbols: vec![],
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     assert!(matches!(ir.validate(), Err(IrError::MissingStartProduction)));
@@ -154,6 +159,7 @@ fn compute_min_depths_simple_recursive() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     compute_min_depths(&mut ir);
@@ -184,6 +190,7 @@ fn compute_min_depths_chain() {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     compute_min_depths(&mut ir);
@@ -209,6 +216,7 @@ fn mark_recursive_detects_self_recursion() {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     mark_recursive(&mut ir);
@@ -238,6 +246,7 @@ fn mark_recursive_non_recursive_is_false() {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     mark_recursive(&mut ir);
@@ -270,6 +279,7 @@ fn mark_recursive_mutual_recursion() {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
 
     mark_recursive(&mut ir);

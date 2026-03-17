@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -48,7 +48,6 @@ Chosen option: **Option 1 — Multi-layer testing.**
 
 **Layer 4 — Conformance tests:**
 - ANTLR frontend: parse grammars from `antlr/grammars-v4`, generate outputs, validate with a reference ANTLR parser (Java) or tree-sitter parser.
-- Protobuf: generate wire-format messages, decode with `prost` or `protobuf` crate, verify roundtrip.
 - SQL: generate queries, parse with `sqlparser-rs`, verify AST structure matches intent.
 - PEG: generate strings from DataDog PEG grammars (from fuzz-generators test fixtures), validate against the Go PEG parser.
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
@@ -26,7 +26,7 @@ In fuzz-generators, config is a single JSON blob per generator (e.g., `SqlConfig
 Chosen option: **Option 1 — Separate Grammar and Profile handles.**
 
 **Grammar handle** — compiled, immutable, `Send + Sync`:
-- `GrammarIr` or `SchemaIr` (production tables, indexes, min_depth, recursion flags).
+- `GrammarIr` (production tables, indexes, min_depth, recursion flags).
 - No mutation parameters, no budgets, no dictionaries.
 - Created via `Grammar::compile(ir)` or frontend: `barkus_antlr::compile(source, opts)`.
 

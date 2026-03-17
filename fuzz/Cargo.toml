@@ -1,0 +1,48 @@
+[package]
+name = "barkus-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+barkus-core = { path = "../crates/barkus-core" }
+barkus-ebnf = { path = "../crates/barkus-ebnf" }
+barkus-peg = { path = "../crates/barkus-peg" }
+barkus-antlr = { path = "../crates/barkus-antlr" }
+rand = { version = "0.8", features = ["small_rng"] }
+
+[workspace]
+
+[[bin]]
+name = "fuzz_ebnf_compile"
+path = "fuzz_targets/fuzz_ebnf_compile.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_peg_compile"
+path = "fuzz_targets/fuzz_peg_compile.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_antlr_compile"
+path = "fuzz_targets/fuzz_antlr_compile.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_tape_decode"
+path = "fuzz_targets/fuzz_tape_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_mutation"
+path = "fuzz_targets/fuzz_mutation.rs"
+test = false
+doc = false

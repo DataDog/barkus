@@ -72,6 +72,9 @@ pub fn range_rerandomize(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl Rn
     }
     let entry = &meta.tape_map.entries[rng.gen_range(0..meta.tape_map.entries.len())];
     let start = entry.tape_offset;
+    if start >= tape.len() {
+        return;
+    }
     let end = (start + entry.tape_len).min(tape.len());
     for byte in &mut tape[start..end] {
         *byte = rng.gen();
@@ -93,6 +96,9 @@ pub fn splice(
         let entry = &meta.tape_map.entries[rng.gen_range(0..n)];
         if let Some(fragment) = db.sample(entry.production_id, rng) {
             let start = entry.tape_offset;
+            if start > tape.len() {
+                continue;
+            }
             let end = (start + entry.tape_len).min(tape.len());
             tape.splice(start..end, fragment.tape_bytes.iter().copied());
             return true;

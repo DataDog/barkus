@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 barkus-core = { path = "../barkus-core" }
 barkus-parser-common = { path = "../barkus-parser-common" }
+
+[dev-dependencies]
+rand = { version = "0.8", features = ["small_rng"] }

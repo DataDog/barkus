@@ -82,6 +82,7 @@ fn build_recursive_grammar() -> GrammarIr {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -106,6 +107,7 @@ fn build_simple_recursive_grammar() -> GrammarIr {
         }],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -153,6 +155,7 @@ fn build_repetition_grammar() -> GrammarIr {
         ],
         symbols,
         start: ProductionId(0),
+    token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir

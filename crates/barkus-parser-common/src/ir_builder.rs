@@ -300,6 +300,7 @@ pub fn build_ir<I: BuildItem>(
         productions,
         symbols,
         start,
+        token_pools: Vec::new(),
     };
 
     compute_min_depths(&mut ir);

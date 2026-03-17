@@ -2,17 +2,15 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context and Problem Statement
 
-Fuzz-generators has a single FFI interface (4 C functions) with `bytes in → bytes out`. Barkus must support multiple fuzzer frameworks: LibAFL (native Rust), Go native fuzzing (`testing.F`), cargo-fuzz/libFuzzer, and custom harnesses. How should the integration boundaries be drawn?
+Fuzz-generators has a single FFI interface (4 C functions) with `bytes in → bytes out`. Barkus must support Go native fuzzing (`testing.F`) and custom harnesses. How should the integration boundaries be drawn?
 
 ## Decision Drivers
 
-- LibAFL's `Input` trait supports custom structured types; its Gramatron integration stores grammar terminals as the corpus item.
 - Go's `testing.F.Fuzz` only provides `[]byte` — the tape must be raw bytes, deterministic, no hidden RNG.
-- The `arbitrary` crate is the standard path for cargo-fuzz structure-aware fuzzing.
 - AFL++'s `LLVMCustomMutator` docs warn that crossover can violate structure.
 
 ## Considered Options
@@ -43,19 +41,9 @@ Ast::serialize(&self, grammar, profile) -> Vec<u8>
 
 Caller controls the tape. Go fuzzing passes corpus `[]byte` as tape. No hidden RNG.
 
-**`barkus-libafl`** — LibAFL native:
-- `BarkusInput` (wraps `DecisionTape`, implements `Input + HasLen`)
-- `BarkusGenerator` (implements `Generator<BarkusInput>`)
-- `BarkusMutator` (implements `Mutator<BarkusInput>`)
-- `BarkusSpliceMutator` (uses `FragmentDb` + corpus metadata)
-
-**`barkus-arbitrary`** — `Arbitrary` trait for cargo-fuzz.
-
 ### Pros
 
 - Go: `[]byte` as tape via FFI, deterministic.
-- LibAFL: native structured input with full mutation power.
-- cargo-fuzz: `Arbitrary` works out of the box.
 - No fuzzer framework dependencies in core.
 
 ### Cons
@@ -65,6 +53,5 @@ Caller controls the tape. Go fuzzing passes corpus `[]byte` as tape. No hidden R
 
 ## Links
 
-- LibAFL documentation: `libafl::inputs::Input` trait, `libafl::generators::Generator` trait
 - Go testing documentation: `testing.F.Fuzz` function signature
 - AFL++ documentation: `LLVMCustomMutator`, `AFL_CUSTOM_MUTATOR_ONLY`

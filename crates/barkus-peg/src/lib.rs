@@ -371,9 +371,14 @@ impl Parser {
                     if self.at_rule_start() {
                         break;
                     }
-                    if let Some(item) = self.parse_atom()? {
-                        let item = self.maybe_quantified(item);
-                        items.push(item);
+                    let before = self.pos;
+                    match self.parse_atom()? {
+                        Some(item) => {
+                            let item = self.maybe_quantified(item);
+                            items.push(item);
+                        }
+                        None if self.pos == before => break,
+                        None => {} // lookahead consumed tokens but produced no item
                     }
                 }
             }
