@@ -21,6 +21,7 @@ cargo run -p barkus-viz -- <grammar> [options]
 | `--max-nodes` | Max total AST nodes | 10000 |
 | `--start` | Start rule name | grammar default |
 | `--no-open` | Don't open the report in a browser (only with `--format=html`) | opens automatically |
+| `--corpus` | Load decision tapes from a directory instead of generating randomly | random generation |
 
 ### Examples
 
@@ -36,7 +37,21 @@ cargo run --release -p barkus-viz -- fixtures/grammars/json.ebnf -n 100000 --for
 
 # With custom limits
 cargo run --release -p barkus-viz -- fixtures/grammars/json.ebnf -n 100000 --max-depth 40 --max-nodes 50000
+
+# Analyze an existing corpus of decision tapes
+cargo run --release -p barkus-viz -- fixtures/grammars/json.ebnf --corpus path/to/corpus/
 ```
+
+### Corpus loading
+
+The `--corpus` flag accepts a directory of decision tape files. Each file in the
+directory is parsed as one tape, in one of two formats:
+
+- **Raw binary** — the file contents are the tape bytes directly (libFuzzer corpus format)
+- **Go fuzz v1** — a text file starting with `go test fuzz v1`, followed by a `[]byte("...")` or `string("...")` value line
+
+The format is auto-detected per file. When `--corpus` is provided, `-n`/`--count`
+and `--seed` are ignored since no random generation occurs.
 
 ## Report sections
 

@@ -1,3 +1,4 @@
+pub mod corpus;
 pub mod html;
 pub mod json;
 pub mod reachability;

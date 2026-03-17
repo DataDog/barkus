@@ -136,7 +136,7 @@ mod tests {
         let profile = Profile::default();
         let recs = analyze(&stats, &profile);
         assert!(!recs.is_empty());
-        assert!(recs[0].flag.contains("--max-depth 40"));
+        assert!(recs[0].flag.contains("--max-depth 60"));
     }
 
     #[test]
@@ -145,7 +145,7 @@ mod tests {
         let profile = Profile::default();
         let recs = analyze(&stats, &profile);
         assert!(!recs.is_empty());
-        assert!(recs[0].flag.contains("--max-nodes 50000"));
+        assert!(recs[0].flag.contains("--max-nodes 100000"));
     }
 
     #[test]

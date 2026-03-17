@@ -3,9 +3,9 @@ use barkus_core::profile::{Profile, ValidityMode};
 #[test]
 fn profile_defaults() {
     let p = Profile::default();
-    assert_eq!(p.max_depth, 20);
-    assert_eq!(p.max_total_nodes, 10_000);
-    assert_eq!(p.repetition_bounds, (0, 5));
+    assert_eq!(p.max_depth, 30);
+    assert_eq!(p.max_total_nodes, 20_000);
+    assert_eq!(p.repetition_bounds, (0, 3));
     assert_eq!(p.validity_mode, ValidityMode::Strict);
     assert!((p.havoc_intensity - 0.5).abs() < f32::EPSILON);
     assert!(p.dictionary.is_empty());

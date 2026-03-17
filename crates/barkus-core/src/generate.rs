@@ -208,7 +208,15 @@ fn expand_symbol_ref_gen<H: SemanticHooks>(
     hooks: &mut H,
 ) -> Result<(), GenerateError> {
     record_modifier(&sym_ref.modifier, profile, writer.offset(), &mut ctx.tape_map);
-    let count = resolve_modifier_gen(&sym_ref.modifier, profile, writer, rng);
+
+    // Check if the inner symbol can fit in the remaining depth budget.
+    // For optional/repetition modifiers, force count to the minimum when it can't.
+    let sym_fits = symbol_fits_depth(grammar, sym_ref.symbol, ctx);
+    let count = if sym_fits {
+        resolve_modifier_gen(&sym_ref.modifier, profile, writer, rng)
+    } else {
+        resolve_modifier_min(&sym_ref.modifier, profile, writer, rng)
+    };
 
     for _ in 0..count {
         let child = expand_symbol_gen(grammar, profile, sym_ref.symbol, ctx, writer, rng, eligible_buf, hooks)?;
@@ -501,7 +509,21 @@ fn expand_symbol_ref_dec<H: SemanticHooks>(
     hooks: &mut H,
 ) -> Result<(), GenerateError> {
     record_modifier(&sym_ref.modifier, profile, reader.offset(), &mut ctx.tape_map);
-    let count = resolve_modifier_dec(&sym_ref.modifier, profile, reader);
+
+    // Always consume the tape bytes to keep the reader aligned, then clamp
+    // the count to 0 when the inner symbol can't fit in the remaining depth.
+    // This is essential because fuzzers mutate tapes arbitrarily — a mutated
+    // tape can encode a high repetition count at any depth.
+    let raw_count = resolve_modifier_dec(&sym_ref.modifier, profile, reader);
+    let count = if symbol_fits_depth(grammar, sym_ref.symbol, ctx) {
+        raw_count
+    } else {
+        match &sym_ref.modifier {
+            Modifier::Once => 1,
+            Modifier::Optional | Modifier::ZeroOrMore { .. } => 0,
+            Modifier::OneOrMore { min, .. } => (*min).max(1),
+        }
+    };
 
     for _ in 0..count {
         let child = expand_symbol_dec(grammar, profile, sym_ref.symbol, ctx, reader, eligible_buf, hooks)?;
@@ -645,6 +667,59 @@ fn emit_terminal_dec_no_hooks(tk: &TerminalKind, reader: &mut TapeReader<'_>) ->
             vec![*lo + idx as u8]
         }
         TerminalKind::TokenPool(_) => Vec::new(),
+    }
+}
+
+/// Check whether a symbol's min_depth fits in the remaining depth budget.
+///
+/// Returns `true` for terminals (always fit) and for non-terminals whose
+/// `min_depth` is within the remaining budget at the current expansion depth.
+fn symbol_fits_depth(grammar: &GrammarIr, sym_id: SymbolId, ctx: &GenCtx) -> bool {
+    match &grammar.symbols[sym_id] {
+        Symbol::Terminal(_) => true,
+        Symbol::NonTerminal(pid) => {
+            // After entering the current production (depth already incremented by
+            // the caller), a child production will increment depth once more,
+            // so `remaining` is what the *child* will see.
+            let remaining = ctx.max_depth.saturating_sub(ctx.depth + 1);
+            grammar.productions[*pid].attrs.min_depth <= remaining
+        }
+    }
+}
+
+/// Resolve a modifier to its minimum count, writing the corresponding tape
+/// entry so that the decode path stays consistent.
+///
+/// Used when the inner symbol cannot fit in the remaining depth budget, so we
+/// must emit the fewest possible expansions (0 for Optional/ZeroOrMore).
+fn resolve_modifier_min(
+    modifier: &Modifier,
+    profile: &Profile,
+    writer: &mut TapeWriter,
+    rng: &mut impl Rng,
+) -> u32 {
+    match modifier {
+        Modifier::Once => {
+            // Can't avoid expanding — the caller's eligible_alts should have
+            // prevented us from reaching here, but return 1 for correctness.
+            1
+        }
+        Modifier::Optional => {
+            writer.write_choice(0, 2, rng); // encode "not present"
+            0
+        }
+        Modifier::ZeroOrMore { min, max } => {
+            let hi = (*max).min(profile.repetition_bounds.1);
+            let count = *min; // smallest allowed
+            writer.write_repetition(count, *min, hi, rng);
+            count
+        }
+        Modifier::OneOrMore { min, max } => {
+            let lo = (*min).max(1);
+            let hi = (*max).min(profile.repetition_bounds.1);
+            writer.write_repetition(lo, lo, hi, rng);
+            lo
+        }
     }
 }
 
