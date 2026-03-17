@@ -20,16 +20,6 @@ Barkus compiles a grammar into a normalized intermediate representation, then wa
 
 The intended workflow: **your fuzzer mutates the tape, and Barkus decodes it into a structured grammar output**. Seed the corpus with `barkus generate`, then let the fuzzer (AFL, libFuzzer, `go test -fuzz`, etc.) mutate the raw bytes. Because each tape byte maps to exactly one structural decision, a single byte flip changes one alternative choice or repetition count without scrambling the rest of the output. Traditional byte-level fuzzing of grammar generators suffers from the *havoc paradox* — variable-width byte consumption means one mutation cascades into a completely different parse tree. Fixed-width tape encoding solves this.
 
-The approach draws on research in grammar-aware fuzzing:
-
-- Aschermann et al., [Nautilus: Fishing for Deep Bugs with Grammars](https://www.syssec.ruhr-uni-bochum.de/media/emma/veroeffentlichungen/2019/02/12/2019-NDSS.pdf) (NDSS 2019) — tree-based mutations on a normalized grammar IR
-- Srivastava et al., [Gramatron: Effective Grammar-Aware Fuzzing](https://doi.org/10.1145/3460319.3464814) (ISSTA 2021) — depth-aware alternative selection to avoid structural bias
-- Blazytko et al., [GRIMOIRE: Synthesizing Structure while Fuzzing](https://www.usenix.org/conference/usenixsecurity19/presentation/blazytko) (USENIX Security 2019) — structure synthesis from byte-level mutations
-- Padhye et al., [Semantic Fuzzing with Zest](https://doi.org/10.1145/3293882.3330576) (ISSTA 2019) — parametric fuzzing with byte-to-structure locality
-- Liyanage et al., [Zeugma: Parametric Fuzzing with Structure-Aware Crossover](https://doi.org/10.1145/3597926.3598040) (ISSTA 2023) — structure-aware crossover on decision streams
-- Wang et al., [Skyfire: Data-Driven Seed Generation for Fuzzing](https://doi.org/10.1109/SP.2017.23) (IEEE S&P 2017) — corpus-mined subtree splicing
-- Holler et al., [Fuzzing with Code Fragments](https://www.usenix.org/conference/usenixsecurity12/technical-sessions/presentation/holler) (USENIX Security 2012) — fragment recombination from existing corpora
-
 **Use it as:**
 
 - **Rust library** (`barkus-core`) — embed generation, decoding, and mutation in your own tooling. Sans I/O: no file access, no global state, caller provides the RNG.
@@ -327,3 +317,14 @@ make ffi         # Build FFI library
 make go-example  # Build Go CLI
 make clean       # Clean all build artifacts
 ```
+
+## Acknowledgement
+
+The approach is inspired by research in grammar-aware fuzzing and from the overall fuzzing community, some of the references can be found:
+
+[LibAFL](https://github.com/AFLplusplus/LibAFL) Advanced Fuzzing Library 
+[Nautilus: Fishing for Deep Bugs with Grammars](https://www.ndss-symposium.org/wp-content/uploads/2019/02/ndss2019_04A-3_Aschermann_paper.pdf) (NDSS 2019) — tree-based mutations on a normalized grammar IR
+[Gramatron: Effective Grammar-Aware Fuzzing](https://doi.org/10.1145/3460319.3464814) (ISSTA 2021) — depth-aware alternative selection to avoid structural bias
+[GRIMOIRE: Synthesizing Structure while Fuzzing](https://www.usenix.org/conference/usenixsecurity19/presentation/blazytko) (USENIX Security 2019) — structure synthesis from byte-level mutations
+[Semantic Fuzzing with Zest](https://doi.org/10.1145/3293882.3330576) (ISSTA 2019) — parametric fuzzing with byte-to-structure locality
+[Zeugma: Parametric Fuzzing with Structure-Aware Crossover](https://doi.org/10.1145/3597926.3598040) (ISSTA 2023) — structure-aware crossover on decision streams
