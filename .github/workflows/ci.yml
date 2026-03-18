@@ -56,3 +56,28 @@ jobs:
           go-version-file: go.mod
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - run: make test-go
+
+  license-3rdparty:
+    name: License Attribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Install dd-license-attribution
+        run: pip install git+https://github.com/DataDog/dd-license-attribution.git
+      - name: Generate LICENSE-3rdparty.csv
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dd-license-attribution generate-sbom-csv \
+            --only-transitive-dependencies \
+            https://github.com/${{ github.repository }} > LICENSE-3rdparty.csv.tmp
+      - name: Check LICENSE-3rdparty.csv is up to date
+        run: |
+          if ! diff -q LICENSE-3rdparty.csv LICENSE-3rdparty.csv.tmp > /dev/null 2>&1; then
+            echo "::error::LICENSE-3rdparty.csv is out of date. Run 'make license-3rdparty' and commit the result."
+            diff LICENSE-3rdparty.csv LICENSE-3rdparty.csv.tmp || true
+            exit 1
+          fi
