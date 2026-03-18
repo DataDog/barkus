@@ -1,0 +1,61 @@
+name: Feature Request (RFC)
+description: Propose a new feature or major change — starts the RFC process
+labels: ["type/feature", "rfc/discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please prefix your issue title with **[RFC]**, e.g. `[RFC] Add support for X`.
+
+        Non-trivial features go through the RFC process described in
+        [CONTRIBUTING.md](../CONTRIBUTING.md#new-features). A maintainer will
+        discuss the proposal with you before any code is written.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: Why is this feature needed? What problem does it solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you implement this? Include API sketches, diagrams, or pseudocode if helpful.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: components
+    attributes:
+      label: Which crates / components are affected?
+      description: Select all that apply.
+      multiple: true
+      options:
+        - barkus-ir
+        - barkus-gen
+        - barkus-ffi
+        - barkus-cli
+        - Grammar frontends (ANTLR, PEG, SQL, etc.)
+        - Go bindings
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you evaluate, and why did you rule them out?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: adr
+    attributes:
+      label: ADR reminder
+      description: Non-trivial changes need an Architecture Decision Record.
+      options:
+        - label: This change may require an ADR — I will include one in the PR if accepted.
