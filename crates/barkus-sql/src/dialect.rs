@@ -24,18 +24,28 @@ pub struct TrinoDialect;
 pub struct SqliteDialect;
 
 impl SqlDialect for GenericDialect {
-    fn name(&self) -> &str { "generic" }
+    fn name(&self) -> &str {
+        "generic"
+    }
 }
 
 impl SqlDialect for PostgresDialect {
-    fn name(&self) -> &str { "postgresql" }
+    fn name(&self) -> &str {
+        "postgresql"
+    }
 }
 
 impl SqlDialect for TrinoDialect {
-    fn name(&self) -> &str { "trino" }
+    fn name(&self) -> &str {
+        "trino"
+    }
 }
 
 impl SqlDialect for SqliteDialect {
-    fn name(&self) -> &str { "sqlite" }
-    fn bool_literal(&self, val: bool) -> String { if val { "1" } else { "0" }.into() }
+    fn name(&self) -> &str {
+        "sqlite"
+    }
+    fn bool_literal(&self, val: bool) -> String {
+        if val { "1" } else { "0" }.into()
+    }
 }

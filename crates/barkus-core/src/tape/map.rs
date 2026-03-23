@@ -63,8 +63,11 @@ impl TapeMap {
     }
 
     pub fn push_repetition(&mut self, tape_offset: usize, min: u32, max: u32) {
-        self.modifier_bytes
-            .push(ModifierByte::Repetition { tape_offset, min, max });
+        self.modifier_bytes.push(ModifierByte::Repetition {
+            tape_offset,
+            min,
+            max,
+        });
     }
 }
 

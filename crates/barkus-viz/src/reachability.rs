@@ -3,8 +3,7 @@ use serde::Serialize;
 
 use crate::stats::CorpusStats;
 
-#[derive(Debug, Clone, Serialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct ReachabilityReport {
     /// Productions never hit across the entire corpus.
     pub unreached: Vec<UnreachedProduction>,
@@ -81,8 +80,7 @@ pub fn analyze(grammar: &GrammarIr, stats: &CorpusStats) -> ReachabilityReport {
             .productions
             .iter()
             .filter(|p| {
-                p.payload_hit_count > 0
-                    && (p.payload_hit_count as f64 / total as f64) < 0.01
+                p.payload_hit_count > 0 && (p.payload_hit_count as f64 / total as f64) < 0.01
             })
             .map(|p| LowCoverageProduction {
                 name: p.name.clone(),
@@ -213,7 +211,7 @@ pub fn analyze(grammar: &GrammarIr, stats: &CorpusStats) -> ReachabilityReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stats::{AlternativeStats, FailureBreakdown, ProductionStats, Histogram};
+    use crate::stats::{AlternativeStats, FailureBreakdown, Histogram, ProductionStats};
 
     fn empty_histogram() -> Histogram {
         Histogram {
@@ -257,7 +255,10 @@ mod tests {
         let stats = CorpusStats {
             total_payloads: 100,
             failures: 0,
-            failure_breakdown: FailureBreakdown { max_depth: 0, max_total_nodes: 0 },
+            failure_breakdown: FailureBreakdown {
+                max_depth: 0,
+                max_total_nodes: 0,
+            },
             productions: vec![
                 ProductionStats {
                     name: "root".into(),

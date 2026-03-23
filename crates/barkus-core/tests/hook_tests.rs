@@ -295,10 +295,7 @@ fn enter_exit_production_order() {
             Production {
                 id: ProductionId(0),
                 name: "S".into(),
-                alternatives: vec![multi_alt(vec![
-                    (a_nt, Modifier::Once),
-                    (x, Modifier::Once),
-                ])],
+                alternatives: vec![multi_alt(vec![(a_nt, Modifier::Once), (x, Modifier::Once)])],
                 attrs: ProductionAttrs::default(),
             },
             Production {

@@ -130,7 +130,9 @@ impl TapeWriter {
         let range = max - min + 1;
         let offset = count - min;
         let base = rng.random_range(0u8..=255);
-        let byte = base.wrapping_sub(base % range as u8).wrapping_add(offset as u8);
+        let byte = base
+            .wrapping_sub(base % range as u8)
+            .wrapping_add(offset as u8);
         self.bytes.push(byte);
     }
 

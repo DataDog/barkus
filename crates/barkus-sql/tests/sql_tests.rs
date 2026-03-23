@@ -18,7 +18,10 @@ fn default_generator_produces_output() {
             }
         }
     }
-    assert!(successes > 0, "expected at least one successful generation across 20 seeds");
+    assert!(
+        successes > 0,
+        "expected at least one successful generation across 20 seeds"
+    );
 }
 
 #[test]
@@ -43,7 +46,9 @@ fn decode_roundtrip() {
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
         if let Ok((sql1, tape, _map)) = gen.generate(&mut rng) {
-            if sql1.is_empty() { continue; }
+            if sql1.is_empty() {
+                continue;
+            }
             let (sql2, _) = gen.decode(&tape).unwrap();
             assert_eq!(sql1, sql2, "decode roundtrip failed for seed {seed}");
             return; // one successful roundtrip is enough
@@ -109,10 +114,7 @@ fn builder_with_custom_context() {
         }],
         functions: vec![],
     };
-    let gen = SqlGenerator::builder()
-        .context(ctx)
-        .build()
-        .unwrap();
+    let gen = SqlGenerator::builder().context(ctx).build().unwrap();
     let mut rng = SmallRng::seed_from_u64(77);
     let _ = gen.generate(&mut rng);
 }
@@ -131,7 +133,9 @@ fn generated_sql_parses_with_sqlparser() {
     for seed in 0..50 {
         let mut rng = SmallRng::seed_from_u64(seed);
         if let Ok((sql, _, _)) = gen.generate(&mut rng) {
-            if sql.trim().is_empty() { continue; }
+            if sql.trim().is_empty() {
+                continue;
+            }
             // Try to parse — we don't require all to succeed since the grammar
             // doesn't yet have full semantic awareness, but track the ratio.
             if Parser::parse_sql(&dialect, &sql).is_ok() {

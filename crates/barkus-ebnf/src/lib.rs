@@ -195,7 +195,9 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ParseError> {
             let start_col = col;
             let mut num = 0u32;
             while pos < chars.len() && chars[pos].is_ascii_digit() {
-                num = num.saturating_mul(10).saturating_add(chars[pos] as u32 - '0' as u32);
+                num = num
+                    .saturating_mul(10)
+                    .saturating_add(chars[pos] as u32 - '0' as u32);
                 pos += 1;
                 col += 1;
             }

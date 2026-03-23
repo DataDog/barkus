@@ -21,8 +21,8 @@ fn classify_pool(name: &str) -> PoolKind {
     let upper = name.to_ascii_uppercase();
     match upper.as_str() {
         "IDENTIFIER" | "ID" | "SIMPLE_ID" | "GENERAL_ID" => PoolKind::Identifier,
-        "NUMERIC_LITERAL" | "NUMBER_LITERAL" | "INTEGER_LITERAL"
-        | "DECIMAL_LITERAL" | "INT_NUMBER" | "REAL_NUMBER" => PoolKind::NumericLiteral,
+        "NUMERIC_LITERAL" | "NUMBER_LITERAL" | "INTEGER_LITERAL" | "DECIMAL_LITERAL"
+        | "INT_NUMBER" | "REAL_NUMBER" => PoolKind::NumericLiteral,
         "STRING_LITERAL" | "DQSTRING_LITERAL" | "SQSTRING_LITERAL" => PoolKind::StringLiteral,
         _ => PoolKind::Other,
     }
@@ -99,7 +99,11 @@ impl<'a> SqlHooks<'a> {
             return None;
         }
         let idx = tape_byte as usize % self.all_columns.len();
-        Some(self.dialect.quote_identifier(&self.all_columns[idx]).into_bytes())
+        Some(
+            self.dialect
+                .quote_identifier(&self.all_columns[idx])
+                .into_bytes(),
+        )
     }
 
     fn pick_number(&self, tape_byte: u8) -> Vec<u8> {
@@ -115,7 +119,11 @@ impl<'a> SqlHooks<'a> {
 
 impl SemanticHooks for SqlHooks<'_> {
     fn on_token_pool(&mut self, pool_id: PoolId, tape_byte: u8) -> Option<Vec<u8>> {
-        let kind = self.pool_kinds.get(pool_id.0 as usize).copied().unwrap_or(PoolKind::Other);
+        let kind = self
+            .pool_kinds
+            .get(pool_id.0 as usize)
+            .copied()
+            .unwrap_or(PoolKind::Other);
         match kind {
             PoolKind::Identifier => {
                 if tape_byte.is_multiple_of(2) {
@@ -152,15 +160,25 @@ pub(crate) struct HookMetadata {
 
 impl HookMetadata {
     pub fn new(grammar: &barkus_core::ir::GrammarIr, context: &SqlContext) -> Self {
-        let pool_kinds: Vec<PoolKind> = grammar.token_pools.iter()
+        let pool_kinds: Vec<PoolKind> = grammar
+            .token_pools
+            .iter()
             .map(|p| classify_pool(&p.name))
             .collect();
-        let prod_kinds: Vec<ProdKind> = grammar.productions.iter()
+        let prod_kinds: Vec<ProdKind> = grammar
+            .productions
+            .iter()
             .map(|p| classify_prod(&p.name))
             .collect();
-        let all_columns: Vec<String> = context.tables.iter()
+        let all_columns: Vec<String> = context
+            .tables
+            .iter()
             .flat_map(|t| t.columns.iter().map(|c| c.name.clone()))
             .collect();
-        HookMetadata { pool_kinds, prod_kinds, all_columns }
+        HookMetadata {
+            pool_kinds,
+            prod_kinds,
+            all_columns,
+        }
     }
 }

@@ -117,8 +117,16 @@ mod tests {
                 max_total_nodes: max_nodes,
             },
             productions: vec![],
-            depth_histogram: Histogram { buckets: vec![], min: u32::MAX, max: 0 },
-            node_count_histogram: Histogram { buckets: vec![], min: u32::MAX, max: 0 },
+            depth_histogram: Histogram {
+                buckets: vec![],
+                min: u32::MAX,
+                max: 0,
+            },
+            node_count_histogram: Histogram {
+                buckets: vec![],
+                min: u32::MAX,
+                max: 0,
+            },
         }
     }
 

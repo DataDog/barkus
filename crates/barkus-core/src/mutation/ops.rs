@@ -147,15 +147,13 @@ pub fn subtree_regenerate(
 /// Finds a random `ModifierByte::Optional` in the tape map and XORs its choice byte with 1,
 /// flipping between the "present" and "absent" states. This is a minimal, targeted mutation
 /// that exercises optional branch coverage.
-pub fn toggle_optional(
-    tape: &mut [u8],
-    meta: &MutationMeta,
-    rng: &mut impl Rng,
-) -> bool {
+pub fn toggle_optional(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl Rng) -> bool {
     let mbs = &meta.tape_map.modifier_bytes;
-    let Some(idx) = pick_random_matching(mbs.len(), rng, |i| {
-        matches!(mbs[i], ModifierByte::Optional { tape_offset } if tape_offset < tape.len())
-    }) else {
+    let Some(idx) = pick_random_matching(
+        mbs.len(),
+        rng,
+        |i| matches!(mbs[i], ModifierByte::Optional { tape_offset } if tape_offset < tape.len()),
+    ) else {
         return false;
     };
 
@@ -171,19 +169,22 @@ pub fn toggle_optional(
 /// Finds a random `ModifierByte::Repetition` in the tape map and nudges its encoded count
 /// up or down by one iteration (clamped to the `[min, max]` range). This explores
 /// boundary conditions in repetition-dependent logic without drastically changing structure.
-pub fn perturb_repetition(
-    tape: &mut [u8],
-    meta: &MutationMeta,
-    rng: &mut impl Rng,
-) -> bool {
+pub fn perturb_repetition(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl Rng) -> bool {
     let mbs = &meta.tape_map.modifier_bytes;
-    let Some(idx) = pick_random_matching(mbs.len(), rng, |i| {
-        matches!(mbs[i], ModifierByte::Repetition { tape_offset, .. } if tape_offset < tape.len())
-    }) else {
+    let Some(idx) = pick_random_matching(
+        mbs.len(),
+        rng,
+        |i| matches!(mbs[i], ModifierByte::Repetition { tape_offset, .. } if tape_offset < tape.len()),
+    ) else {
         return false;
     };
 
-    let ModifierByte::Repetition { tape_offset, min, max } = mbs[idx] else {
+    let ModifierByte::Repetition {
+        tape_offset,
+        min,
+        max,
+    } = mbs[idx]
+    else {
         unreachable!()
     };
     let range = max - min + 1;
@@ -191,7 +192,11 @@ pub fn perturb_repetition(
     let current_count = min + (current_byte as u32 % range);
 
     let new_count = if rng.random_bool(0.5) {
-        if current_count < max { current_count + 1 } else { current_count - 1 }
+        if current_count < max {
+            current_count + 1
+        } else {
+            current_count - 1
+        }
     } else if current_count > min {
         current_count - 1
     } else {
@@ -252,9 +257,7 @@ pub fn mutate(
             true
         }
         MutationKind::Splice => splice(tape, meta, db, rng),
-        MutationKind::SubtreeRegenerate => {
-            subtree_regenerate(tape, meta, grammar, profile, rng)
-        }
+        MutationKind::SubtreeRegenerate => subtree_regenerate(tape, meta, grammar, profile, rng),
         MutationKind::ToggleOptional => toggle_optional(tape, meta, rng),
         MutationKind::PerturbRepetition => perturb_repetition(tape, meta, rng),
     };

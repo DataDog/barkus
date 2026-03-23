@@ -11,17 +11,32 @@ struct JsonReport<'a> {
     recommendations: &'a [Recommendation],
 }
 
-pub fn render(stats: &CorpusStats, reachability: &ReachabilityReport, recommendations: &[Recommendation], grammar_path: &str) -> String {
+pub fn render(
+    stats: &CorpusStats,
+    reachability: &ReachabilityReport,
+    recommendations: &[Recommendation],
+    grammar_path: &str,
+) -> String {
     let report = make_report(stats, reachability, recommendations, grammar_path);
     serde_json::to_string_pretty(&report).expect("failed to serialize JSON report")
 }
 
-pub(crate) fn render_compact(stats: &CorpusStats, reachability: &ReachabilityReport, recommendations: &[Recommendation], grammar_path: &str) -> String {
+pub(crate) fn render_compact(
+    stats: &CorpusStats,
+    reachability: &ReachabilityReport,
+    recommendations: &[Recommendation],
+    grammar_path: &str,
+) -> String {
     let report = make_report(stats, reachability, recommendations, grammar_path);
     serde_json::to_string(&report).expect("failed to serialize JSON report")
 }
 
-fn make_report<'a>(stats: &'a CorpusStats, reachability: &'a ReachabilityReport, recommendations: &'a [Recommendation], grammar_path: &'a str) -> JsonReport<'a> {
+fn make_report<'a>(
+    stats: &'a CorpusStats,
+    reachability: &'a ReachabilityReport,
+    recommendations: &'a [Recommendation],
+    grammar_path: &'a str,
+) -> JsonReport<'a> {
     JsonReport {
         grammar_path,
         stats,
@@ -34,14 +49,19 @@ fn make_report<'a>(stats: &'a CorpusStats, reachability: &'a ReachabilityReport,
 mod tests {
     use super::*;
     use crate::reachability::ReachabilityReport;
-    use crate::stats::{AlternativeStats, CorpusStats, FailureBreakdown, Histogram, ProductionStats};
+    use crate::stats::{
+        AlternativeStats, CorpusStats, FailureBreakdown, Histogram, ProductionStats,
+    };
 
     #[test]
     fn test_render_valid_json() {
         let stats = CorpusStats {
             total_payloads: 100,
             failures: 2,
-            failure_breakdown: FailureBreakdown { max_depth: 1, max_total_nodes: 1 },
+            failure_breakdown: FailureBreakdown {
+                max_depth: 1,
+                max_total_nodes: 1,
+            },
             productions: vec![ProductionStats {
                 name: "root".into(),
                 production_id: 0,
@@ -72,6 +92,9 @@ mod tests {
         assert_eq!(parsed["grammar_path"], "test.ebnf");
         assert_eq!(parsed["stats"]["total_payloads"], 100);
         assert_eq!(parsed["stats"]["failures"], 2);
-        assert!(parsed["reachability"]["unreached"].as_array().unwrap().is_empty());
+        assert!(parsed["reachability"]["unreached"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }

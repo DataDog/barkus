@@ -74,7 +74,11 @@ fn tape_writer_reader_roundtrip_repetition() {
 
 #[test]
 fn tape_header_preserves_validity_mode() {
-    for mode in [ValidityMode::Strict, ValidityMode::NearValid, ValidityMode::Havoc] {
+    for mode in [
+        ValidityMode::Strict,
+        ValidityMode::NearValid,
+        ValidityMode::Havoc,
+    ] {
         let tape = DecisionTape::new(mode);
         assert_eq!(tape.validity_mode(), mode);
     }

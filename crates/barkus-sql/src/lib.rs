@@ -3,7 +3,7 @@ pub mod dialect;
 pub mod hooks;
 
 use barkus_antlr::compile_split;
-use barkus_core::generate::{generate_with_hooks, decode_with_hooks};
+use barkus_core::generate::{decode_with_hooks, generate_with_hooks};
 use barkus_core::ir::GrammarIr;
 use barkus_core::profile::Profile;
 use barkus_core::tape::map::TapeMap;
@@ -43,11 +43,15 @@ impl std::fmt::Display for SqlError {
 impl std::error::Error for SqlError {}
 
 impl From<barkus_antlr::ParseError> for SqlError {
-    fn from(e: barkus_antlr::ParseError) -> Self { SqlError::Grammar(e) }
+    fn from(e: barkus_antlr::ParseError) -> Self {
+        SqlError::Grammar(e)
+    }
 }
 
 impl From<barkus_core::error::GenerateError> for SqlError {
-    fn from(e: barkus_core::error::GenerateError) -> Self { SqlError::Generate(e) }
+    fn from(e: barkus_core::error::GenerateError) -> Self {
+        SqlError::Generate(e)
+    }
 }
 
 impl SqlGenerator {
@@ -62,7 +66,10 @@ impl SqlGenerator {
     }
 
     /// Generate a SQL string from random input.
-    pub fn generate(&self, rng: &mut impl Rng) -> Result<(String, DecisionTape, TapeMap), SqlError> {
+    pub fn generate(
+        &self,
+        rng: &mut impl Rng,
+    ) -> Result<(String, DecisionTape, TapeMap), SqlError> {
         let mut hooks = SqlHooks::new(
             &self.context,
             &*self.dialect,
@@ -160,12 +167,10 @@ impl SqlGeneratorBuilder {
 
         let grammar = compile_split(&lexer_src, &parser_src)?;
 
-        let dialect: Box<dyn dialect::SqlDialect> = self.dialect
-            .unwrap_or_else(|| Box::new(SqliteDialect));
-        let context = self.context
-            .unwrap_or_else(SqlContext::synthetic);
-        let mut profile = self.profile
-            .unwrap_or_default();
+        let dialect: Box<dyn dialect::SqlDialect> =
+            self.dialect.unwrap_or_else(|| Box::new(SqliteDialect));
+        let context = self.context.unwrap_or_else(SqlContext::synthetic);
+        let mut profile = self.profile.unwrap_or_default();
         // Real SQL grammars are deeply recursive; increase depth budget.
         if profile.max_depth < 80 {
             profile.max_depth = 80;
@@ -173,10 +178,18 @@ impl SqlGeneratorBuilder {
 
         let metadata = HookMetadata::new(&grammar, &context);
 
-        Ok(SqlGenerator { grammar, profile, context, dialect, metadata })
+        Ok(SqlGenerator {
+            grammar,
+            profile,
+            context,
+            dialect,
+            metadata,
+        })
     }
 }
 
 impl Default for SqlGeneratorBuilder {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

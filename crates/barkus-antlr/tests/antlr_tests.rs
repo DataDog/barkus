@@ -156,7 +156,10 @@ fn quantifier_one_or_more() {
         assert!(s.starts_with('a'), "should start with 'a': {:?}", s);
         assert!(s.ends_with('c'), "should end with 'c': {:?}", s);
         let middle = &s[1..s.len() - 1];
-        assert!(!middle.is_empty(), "one-or-more should produce at least one 'b'");
+        assert!(
+            !middle.is_empty(),
+            "one-or-more should produce at least one 'b'"
+        );
         assert!(
             middle.chars().all(|c| c == 'b'),
             "middle should be all 'b': {:?}",
@@ -396,7 +399,10 @@ fn recursive_grammar() {
 fn compile_json_fixture() {
     let source = include_str!("../../../fixtures/grammars/json.g4");
     let ir = compile(source).unwrap();
-    assert!(ir.productions.len() >= 5, "JSON grammar should have several productions");
+    assert!(
+        ir.productions.len() >= 5,
+        "JSON grammar should have several productions"
+    );
     assert_eq!(ir.productions[ir.start.0 as usize].name, "json");
     for seed in 0..5 {
         let bytes = generate_seeded(&ir, seed);

@@ -205,10 +205,7 @@ impl<'a> IrBuilder<'a> {
 
     /// Build an item into a single SymbolId. If the item produces multiple
     /// SymbolRefs, wrap them in an anonymous production.
-    pub fn build_single_symbol<I: BuildItem>(
-        &mut self,
-        item: &I,
-    ) -> Result<SymbolId, ParseError> {
+    pub fn build_single_symbol<I: BuildItem>(&mut self, item: &I) -> Result<SymbolId, ParseError> {
         let mut refs = Vec::with_capacity(1);
         I::build_item(self, item, &mut refs)?;
 

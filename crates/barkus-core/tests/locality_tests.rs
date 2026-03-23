@@ -82,7 +82,7 @@ fn locality_sequence_of_choices() {
         ],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -154,7 +154,7 @@ fn locality_prefix_stable_under_suffix_mutation() {
         ],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -217,7 +217,7 @@ fn locality_suffix_stable_under_prefix_mutation() {
         ],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -269,7 +269,7 @@ fn locality_recursive_grammar() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -380,7 +380,7 @@ fn locality_repetition_count_isolated() {
         ],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -397,7 +397,7 @@ fn locality_repetition_count_isolated() {
         // vs decode. Locality is a tape-level property, so decode-vs-decode is
         // the correct comparison.
         let original = decode(&ir, &profile, &tape.bytes).unwrap().0.serialize();
-        assert!(original.len() >= 1, "seed={seed}: output too short");
+        assert!(!original.is_empty(), "seed={seed}: output too short");
 
         let a_len = original.len() - 1;
         let b_byte = *original.last().unwrap();
@@ -427,7 +427,11 @@ fn locality_repetition_count_isolated() {
             mutated[3] ^= 0xFF;
             let (decoded, _) = decode(&ir, &profile, &mutated).unwrap();
             let out = decoded.serialize();
-            assert_eq!(out.len(), original.len(), "seed={seed}: length changed on B flip");
+            assert_eq!(
+                out.len(),
+                original.len(),
+                "seed={seed}: length changed on B flip"
+            );
             assert_eq!(
                 &out[..a_len],
                 &original[..a_len],
@@ -474,7 +478,7 @@ fn locality_many_decisions_single_flip() {
         productions,
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 

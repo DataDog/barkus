@@ -75,7 +75,7 @@ fn build_small_grammar() -> GrammarIr {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -258,7 +258,7 @@ fn build_medium_grammar() -> GrammarIr {
         productions,
         symbols,
         start: p_value,
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -285,9 +285,7 @@ fn build_large_grammar() -> GrammarIr {
         .collect();
 
     // Create non-terminal symbols for each production.
-    let nt_syms: Vec<SymbolId> = (0..n)
-        .map(|i| nt_sym(&mut symbols, prod_ids[i]))
-        .collect();
+    let nt_syms: Vec<SymbolId> = (0..n).map(|i| nt_sym(&mut symbols, prod_ids[i])).collect();
 
     // A shared char-class terminal for the leaf production.
     let az = char_class_sym(&mut symbols, vec![(b'a', b'z')]);
@@ -333,7 +331,7 @@ fn build_large_grammar() -> GrammarIr {
         productions,
         symbols,
         start: prod_ids[0],
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -371,7 +369,10 @@ fn prepare_input(grammar: GrammarIr, profile: Profile, seed: u64) -> PreparedInp
 
     // If we never succeeded, generate once more with a generous budget.
     if last_meta.is_none() {
-        let generous = Profile::builder().max_depth(20).max_total_nodes(50_000).build();
+        let generous = Profile::builder()
+            .max_depth(20)
+            .max_total_nodes(50_000)
+            .build();
         let mut rng2 = SmallRng::seed_from_u64(seed + 100);
         let (ast, tape, tape_map) = generate(&grammar, &generous, &mut rng2).unwrap();
         let meta = MutationMeta::compute(&ast, tape_map, &grammar);
@@ -406,7 +407,7 @@ fn bench_generate(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("throughput", name), name, |b, _| {
             let mut rng = SmallRng::seed_from_u64(42);
             b.iter(|| {
-                let _ = generate(black_box(&grammar), black_box(&profile), &mut rng);
+                let _ = generate(black_box(grammar), black_box(&profile), &mut rng);
             });
         });
     }
@@ -419,9 +420,18 @@ fn bench_decode(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(1));
 
     let cases: Vec<(&str, PreparedInput)> = vec![
-        ("small", prepare_input(build_small_grammar(), Profile::default(), 1)),
-        ("medium", prepare_input(build_medium_grammar(), Profile::default(), 2)),
-        ("large", prepare_input(build_large_grammar(), Profile::default(), 3)),
+        (
+            "small",
+            prepare_input(build_small_grammar(), Profile::default(), 1),
+        ),
+        (
+            "medium",
+            prepare_input(build_medium_grammar(), Profile::default(), 2),
+        ),
+        (
+            "large",
+            prepare_input(build_large_grammar(), Profile::default(), 3),
+        ),
     ];
 
     for (name, input) in &cases {
@@ -444,9 +454,18 @@ fn bench_mutation(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(1));
 
     let cases: Vec<(&str, PreparedInput)> = vec![
-        ("small", prepare_input(build_small_grammar(), Profile::default(), 10)),
-        ("medium", prepare_input(build_medium_grammar(), Profile::default(), 20)),
-        ("large", prepare_input(build_large_grammar(), Profile::default(), 30)),
+        (
+            "small",
+            prepare_input(build_small_grammar(), Profile::default(), 10),
+        ),
+        (
+            "medium",
+            prepare_input(build_medium_grammar(), Profile::default(), 20),
+        ),
+        (
+            "large",
+            prepare_input(build_large_grammar(), Profile::default(), 30),
+        ),
     ];
 
     for (name, input) in &cases {

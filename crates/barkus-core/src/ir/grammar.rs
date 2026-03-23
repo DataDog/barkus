@@ -63,7 +63,10 @@ pub enum Symbol {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TerminalKind {
     Literal(Vec<u8>),
-    CharClass { ranges: Vec<(u8, u8)>, negated: bool },
+    CharClass {
+        ranges: Vec<(u8, u8)>,
+        negated: bool,
+    },
     AnyByte,
     ByteRange(u8, u8),
     TokenPool(PoolId),

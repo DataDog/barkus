@@ -58,7 +58,16 @@ pub fn generate_with_hooks<H: SemanticHooks>(
     let mut writer = TapeWriter::new(profile.validity_mode);
     let mut eligible_buf = Vec::new();
 
-    let root = expand_production_gen(grammar, profile, start, &mut ctx, &mut writer, rng, &mut eligible_buf, hooks)?;
+    let root = expand_production_gen(
+        grammar,
+        profile,
+        start,
+        &mut ctx,
+        &mut writer,
+        rng,
+        &mut eligible_buf,
+        hooks,
+    )?;
     ctx.ast.root = root;
 
     let tape = writer.finish();
@@ -76,7 +85,15 @@ pub fn decode_with_hooks<H: SemanticHooks>(
     let mut reader = TapeReader::new(tape);
     let mut eligible_buf = Vec::new();
 
-    let root = expand_production_dec(grammar, profile, grammar.start, &mut ctx, &mut reader, &mut eligible_buf, hooks)?;
+    let root = expand_production_dec(
+        grammar,
+        profile,
+        grammar.start,
+        &mut ctx,
+        &mut reader,
+        &mut eligible_buf,
+        hooks,
+    )?;
     ctx.ast.root = root;
 
     Ok((ctx.ast, ctx.tape_map))
@@ -179,16 +196,29 @@ fn expand_production_gen<H: SemanticHooks>(
     };
 
     let node_id = ctx.ast.new_node(AstNodeKind::Production(prod_id));
-    let n_syms = grammar.productions[prod_id].alternatives[alt_idx].symbols.len();
+    let n_syms = grammar.productions[prod_id].alternatives[alt_idx]
+        .symbols
+        .len();
 
     ctx.depth += 1;
     for i in 0..n_syms {
         let sym_ref = grammar.productions[prod_id].alternatives[alt_idx].symbols[i].clone();
-        expand_symbol_ref_gen(grammar, profile, &sym_ref, ctx, writer, rng, node_id, eligible_buf, hooks)?;
+        expand_symbol_ref_gen(
+            grammar,
+            profile,
+            &sym_ref,
+            ctx,
+            writer,
+            rng,
+            node_id,
+            eligible_buf,
+            hooks,
+        )?;
     }
     ctx.depth -= 1;
 
-    ctx.tape_map.push(tape_start, writer.offset() - tape_start, node_id, prod_id);
+    ctx.tape_map
+        .push(tape_start, writer.offset() - tape_start, node_id, prod_id);
 
     hooks.exit_production(prod_id);
 
@@ -207,7 +237,12 @@ fn expand_symbol_ref_gen<H: SemanticHooks>(
     eligible_buf: &mut Vec<usize>,
     hooks: &mut H,
 ) -> Result<(), GenerateError> {
-    record_modifier(&sym_ref.modifier, profile, writer.offset(), &mut ctx.tape_map);
+    record_modifier(
+        &sym_ref.modifier,
+        profile,
+        writer.offset(),
+        &mut ctx.tape_map,
+    );
 
     // Check if the inner symbol can fit in the remaining depth budget.
     // For optional/repetition modifiers, force count to the minimum when it can't.
@@ -219,7 +254,16 @@ fn expand_symbol_ref_gen<H: SemanticHooks>(
     };
 
     for _ in 0..count {
-        let child = expand_symbol_gen(grammar, profile, sym_ref.symbol, ctx, writer, rng, eligible_buf, hooks)?;
+        let child = expand_symbol_gen(
+            grammar,
+            profile,
+            sym_ref.symbol,
+            ctx,
+            writer,
+            rng,
+            eligible_buf,
+            hooks,
+        )?;
         ctx.ast.add_child(parent, child);
     }
     Ok(())
@@ -481,16 +525,28 @@ fn expand_production_dec<H: SemanticHooks>(
     };
 
     let node_id = ctx.ast.new_node(AstNodeKind::Production(prod_id));
-    let n_syms = grammar.productions[prod_id].alternatives[alt_idx].symbols.len();
+    let n_syms = grammar.productions[prod_id].alternatives[alt_idx]
+        .symbols
+        .len();
 
     ctx.depth += 1;
     for i in 0..n_syms {
         let sym_ref = grammar.productions[prod_id].alternatives[alt_idx].symbols[i].clone();
-        expand_symbol_ref_dec(grammar, profile, &sym_ref, ctx, reader, node_id, eligible_buf, hooks)?;
+        expand_symbol_ref_dec(
+            grammar,
+            profile,
+            &sym_ref,
+            ctx,
+            reader,
+            node_id,
+            eligible_buf,
+            hooks,
+        )?;
     }
     ctx.depth -= 1;
 
-    ctx.tape_map.push(tape_start, reader.offset() - tape_start, node_id, prod_id);
+    ctx.tape_map
+        .push(tape_start, reader.offset() - tape_start, node_id, prod_id);
 
     hooks.exit_production(prod_id);
 
@@ -508,7 +564,12 @@ fn expand_symbol_ref_dec<H: SemanticHooks>(
     eligible_buf: &mut Vec<usize>,
     hooks: &mut H,
 ) -> Result<(), GenerateError> {
-    record_modifier(&sym_ref.modifier, profile, reader.offset(), &mut ctx.tape_map);
+    record_modifier(
+        &sym_ref.modifier,
+        profile,
+        reader.offset(),
+        &mut ctx.tape_map,
+    );
 
     // Always consume the tape bytes to keep the reader aligned, then clamp
     // the count to 0 when the inner symbol can't fit in the remaining depth.
@@ -526,7 +587,15 @@ fn expand_symbol_ref_dec<H: SemanticHooks>(
     };
 
     for _ in 0..count {
-        let child = expand_symbol_dec(grammar, profile, sym_ref.symbol, ctx, reader, eligible_buf, hooks)?;
+        let child = expand_symbol_dec(
+            grammar,
+            profile,
+            sym_ref.symbol,
+            ctx,
+            reader,
+            eligible_buf,
+            hooks,
+        )?;
         ctx.ast.add_child(parent, child);
     }
     Ok(())
@@ -744,9 +813,7 @@ fn eligible_alts(
             }
             match &grammar.symbols[sr.symbol] {
                 Symbol::Terminal(_) => true,
-                Symbol::NonTerminal(pid) => {
-                    grammar.productions[*pid].attrs.min_depth <= remaining
-                }
+                Symbol::NonTerminal(pid) => grammar.productions[*pid].attrs.min_depth <= remaining,
             }
         });
         if ok {

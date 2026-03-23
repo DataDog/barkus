@@ -183,10 +183,7 @@ pub fn skip_block_comment(
                 message: "unterminated block comment".into(),
             });
         }
-        if chars[*pos] == close_first
-            && *pos + 1 < chars.len()
-            && chars[*pos + 1] == close_second
-        {
+        if chars[*pos] == close_first && *pos + 1 < chars.len() && chars[*pos + 1] == close_second {
             *pos += 2;
             *col += 2;
             return Ok(());

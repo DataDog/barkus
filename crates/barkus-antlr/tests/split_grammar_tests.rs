@@ -48,7 +48,10 @@ fn split_grammar_with_alternatives() {
     let greetings = ["hello", "hi", "hey"];
     let names = ["alice", "bob"];
     let greeting_match = greetings.iter().find(|g| s.starts_with(*g));
-    assert!(greeting_match.is_some(), "output should start with a greeting: {s}");
+    assert!(
+        greeting_match.is_some(),
+        "output should start with a greeting: {s}"
+    );
     let rest = &s[greeting_match.unwrap().len()..];
     assert!(names.contains(&rest), "rest should be a name: {rest}");
 }
@@ -136,7 +139,10 @@ fn single_literal_lexer_rule_becomes_literal() {
     assert!(ir.token_pools.iter().any(|p| p.name == "ID"));
     let bytes = generate_one(&ir);
     let s = String::from_utf8(bytes).unwrap();
-    assert!(s.starts_with("SELECT*FROM"), "expected SELECT*FROM..., got: {s}");
+    assert!(
+        s.starts_with("SELECT*FROM"),
+        "expected SELECT*FROM..., got: {s}"
+    );
 }
 
 // ── Deterministic generation ────────────────────────────────────────────────
@@ -200,8 +206,15 @@ fn sqlite_grammar_compiles() {
     let parser_src = include_str!("../../../grammars/antlr-sql/sqlite/SQLiteParser.g4");
     let ir = compile_split(lexer_src, parser_src).unwrap();
     // Basic sanity: should have multiple productions and some token pools.
-    assert!(ir.productions.len() > 10, "expected many productions, got {}", ir.productions.len());
-    assert!(!ir.token_pools.is_empty(), "expected token pools from lexer rules");
+    assert!(
+        ir.productions.len() > 10,
+        "expected many productions, got {}",
+        ir.productions.len()
+    );
+    assert!(
+        !ir.token_pools.is_empty(),
+        "expected token pools from lexer rules"
+    );
     // The start rule should be 'parse' (the first lowercase rule in SQLiteParser.g4).
     assert_eq!(ir.productions[ir.start.0 as usize].name, "parse");
 }
@@ -213,8 +226,10 @@ fn sqlite_grammar_generates() {
     let ir = compile_split(lexer_src, parser_src).unwrap();
     // Generate with many seeds — at least some should produce non-empty output.
     // Use a higher max_depth since real SQL grammars are deeply recursive.
-    let mut profile = Profile::default();
-    profile.max_depth = 80;
+    let profile = Profile {
+        max_depth: 80,
+        ..Default::default()
+    };
     let mut non_empty = 0;
     for seed in 0..20 {
         let mut rng = SmallRng::seed_from_u64(seed);
@@ -230,5 +245,8 @@ fn sqlite_grammar_generates() {
             }
         }
     }
-    assert!(non_empty > 0, "expected at least one non-empty output across 20 seeds");
+    assert!(
+        non_empty > 0,
+        "expected at least one non-empty output across 20 seeds"
+    );
 }
