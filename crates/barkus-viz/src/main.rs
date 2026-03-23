@@ -31,7 +31,10 @@ enum Format {
 }
 
 #[derive(Parser)]
-#[command(name = "barkus-viz", about = "Generate a coverage report from a grammar + corpus")]
+#[command(
+    name = "barkus-viz",
+    about = "Generate a coverage report from a grammar + corpus"
+)]
 struct Cli {
     /// Path to the grammar file (.ebnf, .g4, .peg)
     grammar: PathBuf,
@@ -76,7 +79,12 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    let (grammar, profile) = compile_and_configure(&cli.grammar, cli.start.as_deref(), cli.max_depth, cli.max_nodes);
+    let (grammar, profile) = compile_and_configure(
+        &cli.grammar,
+        cli.start.as_deref(),
+        cli.max_depth,
+        cli.max_nodes,
+    );
 
     let is_tty = io::stderr().is_terminal();
     let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -91,11 +99,14 @@ fn main() {
 
         for (i, tape_bytes) in tape_bytes_list.into_iter().enumerate() {
             let i = i as u64;
-            if is_tty && i % 1_000 == 0 {
+            if is_tty && i.is_multiple_of(1_000) {
                 let frame = spinner[(i as usize / 1_000) % spinner.len()];
-                let _ = write!(io::stderr(), "\r\x1b[2K  {frame} {i} / {count} payloads decoded");
+                let _ = write!(
+                    io::stderr(),
+                    "\r\x1b[2K  {frame} {i} / {count} payloads decoded"
+                );
                 let _ = io::stderr().flush();
-            } else if !is_tty && i > 0 && i % 10_000 == 0 {
+            } else if !is_tty && i > 0 && i.is_multiple_of(10_000) {
                 eprintln!("  {i} / {count} payloads decoded");
             }
             match generate::decode(&grammar, &profile, &tape_bytes) {
@@ -111,17 +122,20 @@ fn main() {
 
         (count, collector, "decoded")
     } else {
-        let seed = cli.seed.unwrap_or_else(|| rand::random());
+        let seed = cli.seed.unwrap_or_else(rand::random);
         let mut rng = SmallRng::seed_from_u64(seed);
         let count = cli.count;
         let mut collector = StatsCollector::new_with_capacity(&grammar, count);
 
         for i in 0..count {
-            if is_tty && i % 1_000 == 0 {
+            if is_tty && i.is_multiple_of(1_000) {
                 let frame = spinner[(i as usize / 1_000) % spinner.len()];
-                let _ = write!(io::stderr(), "\r\x1b[2K  {frame} {i} / {count} payloads generated");
+                let _ = write!(
+                    io::stderr(),
+                    "\r\x1b[2K  {frame} {i} / {count} payloads generated"
+                );
                 let _ = io::stderr().flush();
-            } else if !is_tty && i > 0 && i % 10_000 == 0 {
+            } else if !is_tty && i > 0 && i.is_multiple_of(10_000) {
                 eprintln!("  {i} / {count} payloads generated");
             }
             match generate::generate(&grammar, &profile, &mut rng) {

@@ -12,12 +12,16 @@ impl GrammarIr {
         for prod in &self.productions {
             // No empty alternatives.
             if prod.alternatives.is_empty() {
-                return Err(IrError::EmptyAlternative { production: prod.id });
+                return Err(IrError::EmptyAlternative {
+                    production: prod.id,
+                });
             }
 
             for alt in &prod.alternatives {
                 if alt.symbols.is_empty() {
-                    return Err(IrError::EmptyAlternative { production: prod.id });
+                    return Err(IrError::EmptyAlternative {
+                        production: prod.id,
+                    });
                 }
 
                 for sym_ref in &alt.symbols {

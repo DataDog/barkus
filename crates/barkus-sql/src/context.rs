@@ -50,41 +50,125 @@ impl SqlContext {
                 Table {
                     name: "users".into(),
                     columns: vec![
-                        Column { name: "id".into(), ty: SqlType::Integer, nullable: false },
-                        Column { name: "name".into(), ty: SqlType::Text, nullable: false },
-                        Column { name: "email".into(), ty: SqlType::Text, nullable: true },
-                        Column { name: "age".into(), ty: SqlType::Integer, nullable: true },
-                        Column { name: "active".into(), ty: SqlType::Boolean, nullable: false },
-                        Column { name: "created_at".into(), ty: SqlType::Timestamp, nullable: false },
+                        Column {
+                            name: "id".into(),
+                            ty: SqlType::Integer,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "name".into(),
+                            ty: SqlType::Text,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "email".into(),
+                            ty: SqlType::Text,
+                            nullable: true,
+                        },
+                        Column {
+                            name: "age".into(),
+                            ty: SqlType::Integer,
+                            nullable: true,
+                        },
+                        Column {
+                            name: "active".into(),
+                            ty: SqlType::Boolean,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "created_at".into(),
+                            ty: SqlType::Timestamp,
+                            nullable: false,
+                        },
                     ],
                 },
                 Table {
                     name: "orders".into(),
                     columns: vec![
-                        Column { name: "id".into(), ty: SqlType::Integer, nullable: false },
-                        Column { name: "user_id".into(), ty: SqlType::Integer, nullable: false },
-                        Column { name: "product_id".into(), ty: SqlType::Integer, nullable: false },
-                        Column { name: "quantity".into(), ty: SqlType::Integer, nullable: false },
-                        Column { name: "total".into(), ty: SqlType::Float, nullable: false },
-                        Column { name: "status".into(), ty: SqlType::Text, nullable: false },
+                        Column {
+                            name: "id".into(),
+                            ty: SqlType::Integer,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "user_id".into(),
+                            ty: SqlType::Integer,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "product_id".into(),
+                            ty: SqlType::Integer,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "quantity".into(),
+                            ty: SqlType::Integer,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "total".into(),
+                            ty: SqlType::Float,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "status".into(),
+                            ty: SqlType::Text,
+                            nullable: false,
+                        },
                     ],
                 },
                 Table {
                     name: "products".into(),
                     columns: vec![
-                        Column { name: "id".into(), ty: SqlType::Integer, nullable: false },
-                        Column { name: "name".into(), ty: SqlType::Text, nullable: false },
-                        Column { name: "price".into(), ty: SqlType::Float, nullable: false },
-                        Column { name: "category".into(), ty: SqlType::Text, nullable: true },
+                        Column {
+                            name: "id".into(),
+                            ty: SqlType::Integer,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "name".into(),
+                            ty: SqlType::Text,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "price".into(),
+                            ty: SqlType::Float,
+                            nullable: false,
+                        },
+                        Column {
+                            name: "category".into(),
+                            ty: SqlType::Text,
+                            nullable: true,
+                        },
                     ],
                 },
             ],
             functions: vec![
-                Function { name: "COUNT".into(), args: vec![SqlType::Integer], ret: SqlType::Integer },
-                Function { name: "SUM".into(), args: vec![SqlType::Float], ret: SqlType::Float },
-                Function { name: "MAX".into(), args: vec![SqlType::Integer], ret: SqlType::Integer },
-                Function { name: "MIN".into(), args: vec![SqlType::Integer], ret: SqlType::Integer },
-                Function { name: "AVG".into(), args: vec![SqlType::Float], ret: SqlType::Float },
+                Function {
+                    name: "COUNT".into(),
+                    args: vec![SqlType::Integer],
+                    ret: SqlType::Integer,
+                },
+                Function {
+                    name: "SUM".into(),
+                    args: vec![SqlType::Float],
+                    ret: SqlType::Float,
+                },
+                Function {
+                    name: "MAX".into(),
+                    args: vec![SqlType::Integer],
+                    ret: SqlType::Integer,
+                },
+                Function {
+                    name: "MIN".into(),
+                    args: vec![SqlType::Integer],
+                    ret: SqlType::Integer,
+                },
+                Function {
+                    name: "AVG".into(),
+                    args: vec![SqlType::Float],
+                    ret: SqlType::Float,
+                },
             ],
         }
     }

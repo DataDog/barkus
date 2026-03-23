@@ -64,7 +64,14 @@ impl MutationMeta {
         let n_children = ast.nodes[idx].children.len();
         for ci in 0..n_children {
             let child = ast.nodes[idx].children[ci];
-            Self::dfs(ast, child, depth + 1, subtree_sizes, depths, nodes_by_production);
+            Self::dfs(
+                ast,
+                child,
+                depth + 1,
+                subtree_sizes,
+                depths,
+                nodes_by_production,
+            );
             size += subtree_sizes[child.0 as usize];
         }
         subtree_sizes[idx] = size;

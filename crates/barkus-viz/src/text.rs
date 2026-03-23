@@ -29,7 +29,11 @@ pub fn render(
     render_header(&mut out, stats, grammar_path);
     render_recommendations(&mut out, recommendations, grammar_path);
     render_histogram(&mut out, "Depth Distribution", &stats.depth_histogram);
-    render_histogram(&mut out, "Node Count Distribution", &stats.node_count_histogram);
+    render_histogram(
+        &mut out,
+        "Node Count Distribution",
+        &stats.node_count_histogram,
+    );
     render_production_table(&mut out, stats);
     render_issues(&mut out, reachability);
 
@@ -44,7 +48,11 @@ fn render_header(out: &mut String, stats: &CorpusStats, grammar_path: &str) {
     } else {
         0.0
     };
-    let covered = stats.productions.iter().filter(|p| p.payload_hit_count > 0).count();
+    let covered = stats
+        .productions
+        .iter()
+        .filter(|p| p.payload_hit_count > 0)
+        .count();
     let total_prods = stats.productions.len();
     let coverage_pct = if total_prods > 0 {
         covered as f64 / total_prods as f64 * 100.0
@@ -90,9 +98,16 @@ fn render_recommendations(out: &mut String, recs: &[Recommendation], grammar_pat
         return;
     }
 
-    let _ = writeln!(out, "{BOLD}{YELLOW}Suggested flags to reduce failures:{RESET}");
+    let _ = writeln!(
+        out,
+        "{BOLD}{YELLOW}Suggested flags to reduce failures:{RESET}"
+    );
     for rec in recs {
-        let _ = writeln!(out, "    {BOLD}{:<24}{RESET} {DIM}{}{RESET}", rec.flag, rec.reason);
+        let _ = writeln!(
+            out,
+            "    {BOLD}{:<24}{RESET} {DIM}{}{RESET}",
+            rec.flag, rec.reason
+        );
         let _ = writeln!(out, "    {:<24} {DIM}{}{RESET}", "", rec.estimated_impact);
     }
     let _ = writeln!(out);
@@ -184,11 +199,10 @@ fn render_production_table(out: &mut String, stats: &CorpusStats) {
     // Header
     let _ = writeln!(
         out,
-        "  {BOLD}{:<nw$}  {:>10}  {:>8}  {}{RESET}",
+        "  {BOLD}{:<nw$}  {:>10}  {:>8}  Alt distribution{RESET}",
         "Name",
         "Hits",
         "Cov %",
-        "Alt distribution",
         nw = name_width,
     );
     let _ = writeln!(
@@ -271,7 +285,10 @@ fn render_issues(out: &mut String, r: &ReachabilityReport) {
         || !r.weight_disadvantaged.is_empty();
 
     if !has_any {
-        let _ = writeln!(out, "  {GREEN}All productions and alternatives have healthy coverage.{RESET}");
+        let _ = writeln!(
+            out,
+            "  {GREEN}All productions and alternatives have healthy coverage.{RESET}"
+        );
         let _ = writeln!(out);
         return;
     }
@@ -279,16 +296,31 @@ fn render_issues(out: &mut String, r: &ReachabilityReport) {
     let issues: Vec<(&str, &str, String, String)> = r
         .unreached
         .iter()
-        .map(|p| (RED, "UNREACHED", p.name.clone(), "Never hit in any payload.".into()))
+        .map(|p| {
+            (
+                RED,
+                "UNREACHED",
+                p.name.clone(),
+                "Never hit in any payload.".into(),
+            )
+        })
         .chain(r.low_coverage.iter().map(|p| {
-            (YELLOW, "LOW", p.name.clone(), format!("Hit in only {:.2}% of payloads.", p.coverage_pct))
+            (
+                YELLOW,
+                "LOW",
+                p.name.clone(),
+                format!("Hit in only {:.2}% of payloads.", p.coverage_pct),
+            )
         }))
         .chain(r.starved_alternatives.iter().map(|a| {
             (
                 MAGENTA,
                 "STARVED",
                 format!("{} alt {}", a.production_name, a.alt_index),
-                format!("{} (expected ~{:.0} uniform hits)", a.reason, a.expected_uniform),
+                format!(
+                    "{} (expected ~{:.0} uniform hits)",
+                    a.reason, a.expected_uniform
+                ),
             )
         }))
         .chain(r.choke_points.iter().map(|c| {
@@ -307,7 +339,10 @@ fn render_issues(out: &mut String, r: &ReachabilityReport) {
                 DIM,
                 "LOW WEIGHT",
                 format!("{} alt {}", w.production_name, w.alt_index),
-                format!("Weight {} vs max sibling weight {} (<25% of max).", w.weight, w.max_sibling_weight),
+                format!(
+                    "Weight {} vs max sibling weight {} (<25% of max).",
+                    w.weight, w.max_sibling_weight
+                ),
             )
         }))
         .collect();
@@ -339,13 +374,18 @@ mod tests {
         ChokePoint, LowCoverageProduction, ReachabilityReport, StarvedAlternative,
         UnreachedProduction, WeightDisadvantaged,
     };
-    use crate::stats::{AlternativeStats, CorpusStats, FailureBreakdown, Histogram, ProductionStats};
+    use crate::stats::{
+        AlternativeStats, CorpusStats, FailureBreakdown, Histogram, ProductionStats,
+    };
 
     fn sample_stats() -> CorpusStats {
         CorpusStats {
             total_payloads: 1000,
             failures: 5,
-            failure_breakdown: FailureBreakdown { max_depth: 3, max_total_nodes: 2 },
+            failure_breakdown: FailureBreakdown {
+                max_depth: 3,
+                max_total_nodes: 2,
+            },
             productions: vec![
                 ProductionStats {
                     name: "root".into(),
@@ -472,7 +512,10 @@ mod tests {
         let stats = CorpusStats {
             total_payloads: 0,
             failures: 0,
-            failure_breakdown: FailureBreakdown { max_depth: 0, max_total_nodes: 0 },
+            failure_breakdown: FailureBreakdown {
+                max_depth: 0,
+                max_total_nodes: 0,
+            },
             productions: vec![],
             depth_histogram: Histogram {
                 buckets: vec![],

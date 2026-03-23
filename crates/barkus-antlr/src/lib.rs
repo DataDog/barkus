@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
+use barkus_core::ir::analysis::{compute_min_depths, mark_recursive};
 use barkus_core::ir::grammar::TokenPoolEntry;
 use barkus_core::ir::{
-    Alternative, GrammarIr, Modifier, Production, ProductionAttrs, ProductionId, PoolId, Symbol,
+    Alternative, GrammarIr, Modifier, PoolId, Production, ProductionAttrs, ProductionId, Symbol,
     SymbolId, SymbolRef, TerminalKind,
 };
-use barkus_core::ir::analysis::{compute_min_depths, mark_recursive};
 use barkus_parser_common::{
     build_ir, parse_char_class_contents, parse_string_literal, scan_identifier, skip_block_comment,
     skip_line_comment, BuildItem, IrBuilder, RawAlternative, RawGrammar, RawQuantifier, RawRule,
@@ -28,10 +28,7 @@ pub fn compile(source: &str) -> Result<barkus_core::ir::GrammarIr, ParseError> {
 /// lexer tokens will emit `TerminalKind::TokenPool(pool_id)` or `TerminalKind::Literal` for
 /// simple keyword tokens. Fragment rules are inlined into their referencing rules and not
 /// exposed as pools. Rules with `-> skip` or `-> channel(HIDDEN)` are excluded.
-pub fn compile_split(
-    lexer_source: &str,
-    parser_source: &str,
-) -> Result<GrammarIr, ParseError> {
+pub fn compile_split(lexer_source: &str, parser_source: &str) -> Result<GrammarIr, ParseError> {
     // 1. Parse the lexer grammar into raw rules.
     let lexer_tokens = tokenize(lexer_source)?;
     let lexer_raw = parse_grammar_for_split(&lexer_tokens)?;
@@ -65,7 +62,8 @@ pub fn compile_split(
     let n_parser_rules = parser_raw.rules.len();
 
     // Map parser rule names to production IDs.
-    let mut parser_name_to_id: HashMap<String, ProductionId> = HashMap::with_capacity(n_parser_rules);
+    let mut parser_name_to_id: HashMap<String, ProductionId> =
+        HashMap::with_capacity(n_parser_rules);
     for (i, rule) in parser_raw.rules.iter().enumerate() {
         parser_name_to_id.insert(rule.name.clone(), ProductionId(i as u32));
     }
@@ -171,8 +169,14 @@ fn raw_item_to_terminal(item: &RawItem, symbols: &mut Vec<Symbol>) -> Option<Sym
             let inner_ref = raw_item_to_terminal(inner, symbols)?;
             let modifier = match q {
                 RawQuantifier::Optional => Modifier::Optional,
-                RawQuantifier::ZeroOrMore => Modifier::ZeroOrMore { min: 0, max: u32::MAX },
-                RawQuantifier::OneOrMore => Modifier::OneOrMore { min: 1, max: u32::MAX },
+                RawQuantifier::ZeroOrMore => Modifier::ZeroOrMore {
+                    min: 0,
+                    max: u32::MAX,
+                },
+                RawQuantifier::OneOrMore => Modifier::OneOrMore {
+                    min: 1,
+                    max: u32::MAX,
+                },
             };
             return Some(SymbolRef {
                 symbol: inner_ref.symbol,
@@ -208,7 +212,9 @@ fn build_split_item(
     match item {
         RawItem::Literal(s) => {
             let sid = SymbolId(symbols.len() as u32);
-            symbols.push(Symbol::Terminal(TerminalKind::Literal(s.as_bytes().to_vec())));
+            symbols.push(Symbol::Terminal(TerminalKind::Literal(
+                s.as_bytes().to_vec(),
+            )));
             refs.push(SymbolRef {
                 symbol: sid,
                 modifier: Modifier::Once,
@@ -251,13 +257,8 @@ fn build_split_item(
 
             // Check if it's a non-keyword lexer rule → token pool.
             if lexer_rules.contains_key(name.as_str()) {
-                let pool_id = alloc_pool_for(
-                    name,
-                    lexer_name_to_pool,
-                    pool_entries,
-                    lexer_rules,
-                    symbols,
-                );
+                let pool_id =
+                    alloc_pool_for(name, lexer_name_to_pool, pool_entries, lexer_rules, symbols);
                 let sid = SymbolId(symbols.len() as u32);
                 symbols.push(Symbol::Terminal(TerminalKind::TokenPool(pool_id)));
                 refs.push(SymbolRef {
@@ -349,8 +350,14 @@ fn build_split_item(
         RawItem::Quantified(inner, q) => {
             let modifier = match q {
                 RawQuantifier::Optional => Modifier::Optional,
-                RawQuantifier::ZeroOrMore => Modifier::ZeroOrMore { min: 0, max: u32::MAX },
-                RawQuantifier::OneOrMore => Modifier::OneOrMore { min: 1, max: u32::MAX },
+                RawQuantifier::ZeroOrMore => Modifier::ZeroOrMore {
+                    min: 0,
+                    max: u32::MAX,
+                },
+                RawQuantifier::OneOrMore => Modifier::OneOrMore {
+                    min: 1,
+                    max: u32::MAX,
+                },
             };
 
             // Build the inner item into a single symbol.
@@ -496,7 +503,13 @@ fn parse_grammar_for_split(tokens: &[Token]) -> Result<LexerGrammar, ParseError>
         if parser.expect(&TokenKind::Colon).is_err() {
             // Not a rule — skip ahead to next semicolon.
             while !parser.at_end() {
-                if matches!(parser.peek(), Some(Token { kind: TokenKind::Semicolon, .. })) {
+                if matches!(
+                    parser.peek(),
+                    Some(Token {
+                        kind: TokenKind::Semicolon,
+                        ..
+                    })
+                ) {
                     parser.advance();
                     break;
                 }
@@ -620,7 +633,9 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ParseError> {
             let start_col = col;
             pos += 2;
             col += 2;
-            skip_block_comment(&chars, &mut pos, &mut line, &mut col, '*', '/', start_line, start_col)?;
+            skip_block_comment(
+                &chars, &mut pos, &mut line, &mut col, '*', '/', start_line, start_col,
+            )?;
             continue;
         }
 
@@ -860,9 +875,17 @@ impl Parser {
         let mut depth = 1u32;
         while !self.at_end() && depth > 0 {
             match self.peek().map(|t| &t.kind) {
-                Some(TokenKind::LBrace) => { depth += 1; self.advance(); }
-                Some(TokenKind::RBrace) => { depth -= 1; self.advance(); }
-                _ => { self.advance(); }
+                Some(TokenKind::LBrace) => {
+                    depth += 1;
+                    self.advance();
+                }
+                Some(TokenKind::RBrace) => {
+                    depth -= 1;
+                    self.advance();
+                }
+                _ => {
+                    self.advance();
+                }
             }
         }
     }
@@ -929,7 +952,13 @@ impl Parser {
 
     fn parse_alternatives(&mut self) -> Result<Vec<RawAlternative<RawItem>>, ParseError> {
         let mut alts = vec![self.parse_sequence()?];
-        while matches!(self.peek(), Some(Token { kind: TokenKind::Pipe, .. })) {
+        while matches!(
+            self.peek(),
+            Some(Token {
+                kind: TokenKind::Pipe,
+                ..
+            })
+        ) {
             self.advance();
             alts.push(self.parse_sequence()?);
         }
@@ -956,7 +985,13 @@ impl Parser {
                 Some(TokenKind::Hash) => {
                     // Skip ANTLR label `# labelName`
                     self.advance();
-                    if matches!(self.peek(), Some(Token { kind: TokenKind::Ident(_), .. })) {
+                    if matches!(
+                        self.peek(),
+                        Some(Token {
+                            kind: TokenKind::Ident(_),
+                            ..
+                        })
+                    ) {
                         self.advance();
                     }
                 }
@@ -976,22 +1011,46 @@ impl Parser {
 
     fn skip_action(&mut self) -> Result<(), ParseError> {
         self.advance(); // skip `->`
-        // Consume comma-separated actions like `-> pushMode(META), more`
+                        // Consume comma-separated actions like `-> pushMode(META), more`
         loop {
-            if matches!(self.peek(), Some(Token { kind: TokenKind::Ident(_), .. })) {
+            if matches!(
+                self.peek(),
+                Some(Token {
+                    kind: TokenKind::Ident(_),
+                    ..
+                })
+            ) {
                 self.advance();
             }
-            if matches!(self.peek(), Some(Token { kind: TokenKind::LParen, .. })) {
+            if matches!(
+                self.peek(),
+                Some(Token {
+                    kind: TokenKind::LParen,
+                    ..
+                })
+            ) {
                 self.advance();
                 while !self.at_end() {
-                    if matches!(self.peek(), Some(Token { kind: TokenKind::RParen, .. })) {
+                    if matches!(
+                        self.peek(),
+                        Some(Token {
+                            kind: TokenKind::RParen,
+                            ..
+                        })
+                    ) {
                         self.advance();
                         break;
                     }
                     self.advance();
                 }
             }
-            if matches!(self.peek(), Some(Token { kind: TokenKind::Comma, .. })) {
+            if matches!(
+                self.peek(),
+                Some(Token {
+                    kind: TokenKind::Comma,
+                    ..
+                })
+            ) {
                 self.advance();
             } else {
                 break;
@@ -1038,7 +1097,10 @@ impl Parser {
                         let tok = self.advance().unwrap();
                         if let TokenKind::StringLit(s) = tok.kind {
                             let ranges: Vec<(u8, u8)> = s.bytes().map(|b| (b, b)).collect();
-                            Ok(Some(RawItem::CharClass { ranges, negated: true }))
+                            Ok(Some(RawItem::CharClass {
+                                ranges,
+                                negated: true,
+                            }))
                         } else {
                             unreachable!()
                         }
@@ -1047,7 +1109,10 @@ impl Parser {
                         let tok = self.advance().unwrap();
                         if let TokenKind::CharClass { ranges, .. } = tok.kind {
                             // ~[...] as token sequence — already negated by the char class parse
-                            Ok(Some(RawItem::CharClass { ranges, negated: true }))
+                            Ok(Some(RawItem::CharClass {
+                                ranges,
+                                negated: true,
+                            }))
                         } else {
                             unreachable!()
                         }

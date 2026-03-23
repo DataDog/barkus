@@ -13,11 +13,9 @@ use barkus_core::tape::DecisionTape;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
-use barkus_sql::SqlGenerator;
 use barkus_sql::context::SqlContext;
-use barkus_sql::dialect::{
-    GenericDialect, PostgresDialect, SqliteDialect, TrinoDialect,
-};
+use barkus_sql::dialect::{GenericDialect, PostgresDialect, SqliteDialect, TrinoDialect};
+use barkus_sql::SqlGenerator;
 
 struct Handle {
     ir: GrammarIr,
@@ -251,11 +249,7 @@ pub unsafe extern "C" fn barkus_destroy(handle: *mut Handle) {
 /// Returns null if no error has been set.
 #[no_mangle]
 pub extern "C" fn barkus_last_error() -> *const c_char {
-    LAST_ERROR.with(|cell| {
-        cell.borrow()
-            .as_ref()
-            .map_or(ptr::null(), |cs| cs.as_ptr())
-    })
+    LAST_ERROR.with(|cell| cell.borrow().as_ref().map_or(ptr::null(), |cs| cs.as_ptr()))
 }
 
 // ---------------------------------------------------------------------------
@@ -343,30 +337,28 @@ pub unsafe extern "C" fn barkus_sql_compile(
     // Select dialect and its bundled grammar.
     match dialect_str {
         "postgresql" => {
-            builder = builder
-                .dialect(PostgresDialect)
-                .grammar(
-                    include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLLexer.g4"),
-                    include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLParser.g4"),
-                );
+            builder = builder.dialect(PostgresDialect).grammar(
+                include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLLexer.g4"),
+                include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLParser.g4"),
+            );
         }
         "sqlite" => {
             builder = builder.dialect(SqliteDialect);
             // SqliteDialect + default grammar is the builder default, but set dialect explicitly.
         }
         "trino" => {
-            builder = builder
-                .dialect(TrinoDialect)
-                .grammar(
-                    include_str!("../../../grammars/antlr-sql/trino/TrinoLexer.g4"),
-                    include_str!("../../../grammars/antlr-sql/trino/TrinoParser.g4"),
-                );
+            builder = builder.dialect(TrinoDialect).grammar(
+                include_str!("../../../grammars/antlr-sql/trino/TrinoLexer.g4"),
+                include_str!("../../../grammars/antlr-sql/trino/TrinoParser.g4"),
+            );
         }
         "generic" => {
             builder = builder.dialect(GenericDialect);
         }
         _ => {
-            set_last_error(&format!("sql compile error: unknown dialect: {dialect_str:?}"));
+            set_last_error(&format!(
+                "sql compile error: unknown dialect: {dialect_str:?}"
+            ));
             return ptr::null_mut();
         }
     }
@@ -379,7 +371,10 @@ pub unsafe extern "C" fn barkus_sql_compile(
         }
     };
 
-    Box::into_raw(Box::new(SqlHandle { gen, rng: make_rng(seed) }))
+    Box::into_raw(Box::new(SqlHandle {
+        gen,
+        rng: make_rng(seed),
+    }))
 }
 
 /// Generate one SQL string.

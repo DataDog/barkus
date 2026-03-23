@@ -39,8 +39,8 @@ impl Histogram {
             };
         }
         let range = max - min + 1;
-        let bucket_size = ((range as usize + n_buckets - 1) / n_buckets).max(1);
-        let actual_buckets = ((range as usize) + bucket_size - 1) / bucket_size;
+        let bucket_size = (range as usize).div_ceil(n_buckets).max(1);
+        let actual_buckets = (range as usize).div_ceil(bucket_size);
         let mut counts = vec![0u64; actual_buckets];
         for &v in values {
             let idx = ((v - min) as usize) / bucket_size;
@@ -153,10 +153,14 @@ impl StatsCollector {
         self.total_payloads += 1;
         self.failures += 1;
         match error {
-            GenerateError::BudgetExhausted { kind: BudgetKind::MaxDepth } => {
+            GenerateError::BudgetExhausted {
+                kind: BudgetKind::MaxDepth,
+            } => {
                 self.failures_max_depth += 1;
             }
-            GenerateError::BudgetExhausted { kind: BudgetKind::MaxTotalNodes } => {
+            GenerateError::BudgetExhausted {
+                kind: BudgetKind::MaxTotalNodes,
+            } => {
                 self.failures_max_nodes += 1;
             }
         }

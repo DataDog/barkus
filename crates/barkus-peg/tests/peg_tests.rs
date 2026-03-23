@@ -116,11 +116,7 @@ fn quantifier_one_or_more() {
     for seed in 0..20 {
         let s = String::from_utf8(generate_seeded(&ir, seed)).unwrap();
         assert!(!s.is_empty(), "OneOrMore should produce at least one");
-        assert!(
-            s.chars().all(|c| c == 'b'),
-            "should be all 'b': {:?}",
-            s
-        );
+        assert!(s.chars().all(|c| c == 'b'), "should be all 'b': {:?}", s);
     }
 }
 
@@ -222,7 +218,11 @@ fn grouping_with_quantifier() {
     for seed in 0..20 {
         let s = String::from_utf8(generate_seeded(&ir, seed)).unwrap();
         assert!(!s.is_empty());
-        assert!(s.len() % 2 == 0, "should be multiples of 'ab': {:?}", s);
+        assert!(
+            s.len().is_multiple_of(2),
+            "should be multiples of 'ab': {:?}",
+            s
+        );
     }
 }
 
@@ -306,11 +306,7 @@ fn error_duplicate_rule() {
 #[test]
 fn error_unterminated_string() {
     let err = compile(r#"start <- "hello"#).unwrap_err();
-    assert!(
-        err.message.contains("unterminated string"),
-        "got: {}",
-        err
-    );
+    assert!(err.message.contains("unterminated string"), "got: {}", err);
 }
 
 #[test]

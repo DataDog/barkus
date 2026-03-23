@@ -26,8 +26,7 @@ pub fn load_corpus_dir(dir: &Path) -> Result<Vec<Vec<u8>>, String> {
 
 /// Parse a single tape file, auto-detecting Go fuzz v1 vs raw binary.
 fn parse_tape_file(path: &Path) -> Result<Vec<u8>, String> {
-    let raw = fs::read(path)
-        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let raw = fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
 
     // Detect Go fuzz v1: starts with "go test fuzz v1\n"
     if raw.starts_with(b"go test fuzz v1\n") {
@@ -62,7 +61,10 @@ fn parse_go_fuzz_v1(data: &[u8], path: &Path) -> Result<Vec<u8>, String> {
         ));
     }
 
-    Err(format!("{}: Go fuzz file has no value line", path.display()))
+    Err(format!(
+        "{}: Go fuzz file has no value line",
+        path.display()
+    ))
 }
 
 fn strip_go_value<'a>(line: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
@@ -84,9 +86,9 @@ fn parse_go_string_literal(s: &str, path: &Path) -> Result<Vec<u8>, String> {
             continue;
         }
         // Escape sequence.
-        let esc = chars.next().ok_or_else(|| {
-            format!("{}: trailing backslash in Go string", path.display())
-        })?;
+        let esc = chars
+            .next()
+            .ok_or_else(|| format!("{}: trailing backslash in Go string", path.display()))?;
         match esc {
             'n' => out.push(b'\n'),
             't' => out.push(b'\t'),
@@ -141,7 +143,10 @@ fn hex_digit(c: Option<char>, path: &Path) -> Result<u8, String> {
         '0'..='9' => Ok(c as u8 - b'0'),
         'a'..='f' => Ok(c as u8 - b'a' + 10),
         'A'..='F' => Ok(c as u8 - b'A' + 10),
-        _ => Err(format!("{}: invalid hex digit '{c}' in escape", path.display())),
+        _ => Err(format!(
+            "{}: invalid hex digit '{c}' in escape",
+            path.display()
+        )),
     }
 }
 
@@ -155,9 +160,8 @@ fn parse_hex_n(chars: &mut std::str::Chars, n: usize, path: &Path) -> Result<u32
 }
 
 fn encode_codepoint(cp: u32, out: &mut Vec<u8>, path: &Path) -> Result<(), String> {
-    let c = char::from_u32(cp).ok_or_else(|| {
-        format!("{}: invalid Unicode codepoint U+{cp:04X}", path.display())
-    })?;
+    let c = char::from_u32(cp)
+        .ok_or_else(|| format!("{}: invalid Unicode codepoint U+{cp:04X}", path.display()))?;
     let mut buf = [0u8; 4];
     out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
     Ok(())

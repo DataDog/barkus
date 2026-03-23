@@ -59,7 +59,7 @@ fn simple_literal_grammar() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -86,7 +86,7 @@ fn choice_grammar() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -132,7 +132,7 @@ fn repetition_grammar() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -171,7 +171,7 @@ fn recursive_grammar_depth_bounded() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -208,7 +208,7 @@ fn generate_decode_roundtrip() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -241,7 +241,7 @@ fn budget_max_depth_enforced() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -282,7 +282,7 @@ fn tape_locality() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -303,11 +303,7 @@ fn tape_locality() {
     // For this simple grammar the output may change, but it's still valid.
     assert!(out2 == b"a" || out2 == b"b");
     // At most 1 byte of difference (the entire output is 1 byte).
-    let diff_count = out1
-        .iter()
-        .zip(out2.iter())
-        .filter(|(a, b)| a != b)
-        .count();
+    let diff_count = out1.iter().zip(out2.iter()).filter(|(a, b)| a != b).count();
     // Diff is bounded — for this grammar, at most 1.
     assert!(diff_count <= 1);
 }
@@ -328,7 +324,12 @@ fn generate_samples(ir: &GrammarIr, n: u64) -> Vec<Vec<u8>> {
 }
 
 /// Assert each key in `counts` appears between `lo_pct`% and `hi_pct`% of `total`.
-fn assert_uniform(counts: &std::collections::HashMap<Vec<u8>, usize>, total: usize, lo_pct: f64, hi_pct: f64) {
+fn assert_uniform(
+    counts: &std::collections::HashMap<Vec<u8>, usize>,
+    total: usize,
+    lo_pct: f64,
+    hi_pct: f64,
+) {
     for (key, &count) in counts {
         let pct = count as f64 / total as f64 * 100.0;
         assert!(
@@ -358,7 +359,7 @@ fn distribution_alternation_4_chars() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -393,7 +394,7 @@ fn distribution_char_class_digits() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -413,14 +414,12 @@ fn distribution_char_class_digits() {
 #[test]
 fn distribution_alternation_13_chars() {
     let chars: Vec<&[u8]> = vec![
-        b"a", b"b", b"c", b"d", b"e", b"f",
-        b"x", b"y", b"z",
-        b"0", b"1", b"2", b"3",
+        b"a", b"b", b"c", b"d", b"e", b"f", b"x", b"y", b"z", b"0", b"1", b"2", b"3",
     ];
     let mut symbols = Vec::new();
     let alts: Vec<_> = chars
         .iter()
-        .map(|ch| simple_alt(lit_sym(&mut symbols, *ch)))
+        .map(|ch| simple_alt(lit_sym(&mut symbols, ch)))
         .collect();
 
     let mut ir = GrammarIr {
@@ -432,7 +431,7 @@ fn distribution_alternation_13_chars() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 
@@ -470,7 +469,7 @@ fn budget_max_total_nodes_enforced() {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
 

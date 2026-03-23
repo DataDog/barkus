@@ -12,7 +12,10 @@ use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
 #[derive(Parser)]
-#[command(name = "barkus-cli", about = "Generate samples from a grammar (EBNF, ANTLR v4, PEG)")]
+#[command(
+    name = "barkus-cli",
+    about = "Generate samples from a grammar (EBNF, ANTLR v4, PEG)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -139,7 +142,11 @@ fn main() {
     }
 }
 
-fn compile_and_configure(path: &PathBuf, start: Option<&str>, max_depth: Option<u32>) -> (GrammarIr, Profile) {
+fn compile_and_configure(
+    path: &PathBuf,
+    start: Option<&str>,
+    max_depth: Option<u32>,
+) -> (GrammarIr, Profile) {
     let source = fs::read_to_string(path).unwrap_or_else(|e| {
         eprintln!("error reading {}: {e}", path.display());
         process::exit(1);
@@ -151,11 +158,7 @@ fn compile_and_configure(path: &PathBuf, start: Option<&str>, max_depth: Option<
     });
 
     if let Some(start_name) = start {
-        match grammar
-            .productions
-            .iter()
-            .find(|p| p.name == *start_name)
-        {
+        match grammar.productions.iter().find(|p| p.name == *start_name) {
             Some(p) => grammar.start = p.id,
             None => {
                 eprintln!("error: no rule named {:?}", start_name);
@@ -184,10 +187,7 @@ fn print_output(ast: &Ast) {
 }
 
 fn compile_grammar(path: &std::path::Path, source: &str) -> Result<GrammarIr, String> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("ebnf");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("ebnf");
 
     match ext {
         "g4" => barkus_antlr::compile(source).map_err(|e| e.to_string()),

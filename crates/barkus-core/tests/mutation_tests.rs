@@ -5,9 +5,7 @@ use barkus_core::ir::grammar::*;
 use barkus_core::ir::ids::*;
 use barkus_core::mutation::fragment_db::FragmentDb;
 use barkus_core::mutation::meta::MutationMeta;
-use barkus_core::mutation::ops::{
-    self, MutationKind,
-};
+use barkus_core::mutation::ops::{self, MutationKind};
 use barkus_core::profile::Profile;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
@@ -73,16 +71,13 @@ fn build_recursive_grammar() -> GrammarIr {
                 // "x"
                 simple_alt(x),
                 // S? S
-                multi_alt(vec![
-                    (s_nt, Modifier::Optional),
-                    (s_nt, Modifier::Once),
-                ]),
+                multi_alt(vec![(s_nt, Modifier::Optional), (s_nt, Modifier::Once)]),
             ],
             attrs: ProductionAttrs::default(),
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -107,7 +102,7 @@ fn build_simple_recursive_grammar() -> GrammarIr {
         }],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -155,7 +150,7 @@ fn build_repetition_grammar() -> GrammarIr {
         ],
         symbols,
         start: ProductionId(0),
-    token_pools: Vec::new(),
+        token_pools: Vec::new(),
     };
     compute_min_depths(&mut ir);
     ir
@@ -181,7 +176,10 @@ fn meta_subtree_sizes_and_depths() {
         );
 
         // depths[root] == 0
-        assert_eq!(meta.depths[ast.root.0 as usize], 0, "seed={seed}: root depth != 0");
+        assert_eq!(
+            meta.depths[ast.root.0 as usize], 0,
+            "seed={seed}: root depth != 0"
+        );
 
         // nodes_by_production[0] should contain all Production(ProductionId(0)) nodes
         let prod0_nodes: Vec<NodeId> = ast
@@ -217,7 +215,10 @@ fn fragment_db_ingest_and_sample() {
     }
 
     // Pool for production 0 should be populated
-    assert!(db.pool_len(ProductionId(0)) > 0, "production 0 pool should be non-empty");
+    assert!(
+        db.pool_len(ProductionId(0)) > 0,
+        "production 0 pool should be non-empty"
+    );
 
     // Sample returns Some
     assert!(db.sample(ProductionId(0), &mut rng).is_some());
@@ -328,7 +329,10 @@ fn point_mutate_changes_one_byte() {
             .zip(mutated.iter())
             .filter(|(a, b)| a != b)
             .count();
-        assert_eq!(diff_count, 1, "seed={seed}: expected exactly 1 byte diff, got {diff_count}");
+        assert_eq!(
+            diff_count, 1,
+            "seed={seed}: expected exactly 1 byte diff, got {diff_count}"
+        );
     }
 }
 
@@ -347,7 +351,11 @@ fn range_rerandomize_bounded() {
         ops::range_rerandomize(&mut mutated, &meta, &mut mut_rng);
 
         // Header bytes must be unchanged
-        assert_eq!(&tape.bytes[..2], &mutated[..2], "seed={seed}: header changed");
+        assert_eq!(
+            &tape.bytes[..2],
+            &mutated[..2],
+            "seed={seed}: header changed"
+        );
     }
 }
 
@@ -444,7 +452,10 @@ fn perturb_repetition_changes_count() {
             perturbed += 1;
             // Decode should succeed
             let result = decode(&ir, &profile, &mutated);
-            assert!(result.is_ok(), "seed={seed}: decode failed after perturb_repetition");
+            assert!(
+                result.is_ok(),
+                "seed={seed}: decode failed after perturb_repetition"
+            );
         }
     }
     assert!(perturbed > 0, "no repetition perturbations applied");

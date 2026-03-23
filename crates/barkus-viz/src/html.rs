@@ -3,7 +3,12 @@ use crate::reachability::ReachabilityReport;
 use crate::recommend::Recommendation;
 use crate::stats::CorpusStats;
 
-pub fn render(stats: &CorpusStats, reachability: &ReachabilityReport, recommendations: &[Recommendation], grammar_path: &str) -> String {
+pub fn render(
+    stats: &CorpusStats,
+    reachability: &ReachabilityReport,
+    recommendations: &[Recommendation],
+    grammar_path: &str,
+) -> String {
     let json = json::render_compact(stats, reachability, recommendations, grammar_path);
     let escaped_path = html_escape(grammar_path);
 
@@ -360,14 +365,19 @@ fn html_escape(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::reachability::ReachabilityReport;
-    use crate::stats::{AlternativeStats, CorpusStats, FailureBreakdown, Histogram, ProductionStats};
+    use crate::stats::{
+        AlternativeStats, CorpusStats, FailureBreakdown, Histogram, ProductionStats,
+    };
 
     #[test]
     fn test_render_produces_valid_html() {
         let stats = CorpusStats {
             total_payloads: 10,
             failures: 1,
-            failure_breakdown: FailureBreakdown { max_depth: 1, max_total_nodes: 0 },
+            failure_breakdown: FailureBreakdown {
+                max_depth: 1,
+                max_total_nodes: 0,
+            },
             productions: vec![ProductionStats {
                 name: "root".into(),
                 production_id: 0,
