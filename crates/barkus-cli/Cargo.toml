@@ -14,4 +14,4 @@ barkus-ebnf = { path = "../barkus-ebnf" }
 barkus-peg = { path = "../barkus-peg" }
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"
-rand = { version = "0.8", features = ["small_rng"] }
+rand = "0.10"

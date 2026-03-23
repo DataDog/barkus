@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::ir::ids::ProductionId;
 
@@ -56,7 +56,7 @@ impl FragmentDb {
                     subtree_size,
                 });
             } else {
-                let idx = rng.gen_range(0..pool.len());
+                let idx = rng.random_range(0..pool.len());
                 pool[idx] = TapeFragment {
                     tape_bytes: tape[entry.tape_offset..end].to_vec(),
                     subtree_size,
@@ -71,7 +71,7 @@ impl FragmentDb {
         if pool.is_empty() {
             None
         } else {
-            Some(&pool[rng.gen_range(0..pool.len())])
+            Some(&pool[rng.random_range(0..pool.len())])
         }
     }
 

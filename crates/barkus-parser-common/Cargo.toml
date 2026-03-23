@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 barkus-core = { path = "../barkus-core" }
-rand = { version = "0.8", features = ["small_rng"] }
+rand = "0.10"

@@ -80,7 +80,7 @@ fn main() {
 
             let mut rng: SmallRng = match seed {
                 Some(s) => SmallRng::seed_from_u64(s),
-                None => SmallRng::from_entropy(),
+                None => rand::make_rng(),
             };
 
             for _ in 0..count {

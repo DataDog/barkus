@@ -3,7 +3,7 @@
 //! Contains the individual Level 1 (tape-level) and Level 2 (structure-aware) mutation operators,
 //! plus the top-level [`mutate`] function that selects an operator via weighted random choice.
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::generate::generate_from;
 use crate::ir::grammar::GrammarIr;
@@ -39,7 +39,7 @@ fn pick_random_matching(
         if predicate(i) {
             count += 1;
             // Reservoir sampling: keep element i with probability 1/count
-            if rng.gen_range(0..count) == 0 {
+            if rng.random_range(0..count) == 0 {
                 chosen = Some(i);
             }
         }
@@ -54,11 +54,11 @@ pub fn point_mutate(tape: &mut [u8], rng: &mut impl Rng) {
     if tape.len() <= 2 {
         return;
     }
-    let idx = rng.gen_range(2..tape.len());
-    if rng.gen_bool(0.5) {
-        let bit = 1u8 << rng.gen_range(0..8);
+    let idx = rng.random_range(2..tape.len());
+    if rng.random_bool(0.5) {
+        let bit = 1u8 << rng.random_range(0..8);
         tape[idx] ^= bit;
-    } else if rng.gen_bool(0.5) {
+    } else if rng.random_bool(0.5) {
         tape[idx] = tape[idx].wrapping_add(1);
     } else {
         tape[idx] = tape[idx].wrapping_sub(1);
@@ -70,14 +70,14 @@ pub fn range_rerandomize(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl Rn
     if meta.tape_map.entries.is_empty() {
         return;
     }
-    let entry = &meta.tape_map.entries[rng.gen_range(0..meta.tape_map.entries.len())];
+    let entry = &meta.tape_map.entries[rng.random_range(0..meta.tape_map.entries.len())];
     let start = entry.tape_offset;
     if start >= tape.len() {
         return;
     }
     let end = (start + entry.tape_len).min(tape.len());
     for byte in &mut tape[start..end] {
-        *byte = rng.gen();
+        *byte = rng.random();
     }
 }
 
@@ -93,7 +93,7 @@ pub fn splice(
         return false;
     }
     for _ in 0..10 {
-        let entry = &meta.tape_map.entries[rng.gen_range(0..n)];
+        let entry = &meta.tape_map.entries[rng.random_range(0..n)];
         if let Some(fragment) = db.sample(entry.production_id, rng) {
             let start = entry.tape_offset;
             if start > tape.len() {
@@ -190,7 +190,7 @@ pub fn perturb_repetition(
     let current_byte = tape[tape_offset];
     let current_count = min + (current_byte as u32 % range);
 
-    let new_count = if rng.gen_bool(0.5) {
+    let new_count = if rng.random_bool(0.5) {
         if current_count < max { current_count + 1 } else { current_count - 1 }
     } else if current_count > min {
         current_count - 1
@@ -230,7 +230,7 @@ pub fn mutate(
     //
     // Weights: point_mutate=3, range_rerandomize=2, splice=2,
     //          subtree_regenerate=2, toggle_optional=1, perturb_repetition=1
-    let roll = rng.gen_range(0..11u32);
+    let roll = rng.random_range(0..11u32);
 
     let kind = match roll {
         0..=2 => MutationKind::PointMutate,
