@@ -1,6 +1,6 @@
 pub mod map;
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::profile::ValidityMode;
 
@@ -117,7 +117,7 @@ impl TapeWriter {
         }
         // Pick a random byte that maps to `chosen` via `byte % n`.
         // Use wrapping arithmetic to avoid overflow when the result would exceed 255.
-        let base = rng.gen_range(0u8..=255);
+        let base = rng.random_range(0u8..=255);
         let byte = base.wrapping_sub(base % n as u8).wrapping_add(chosen as u8);
         self.bytes.push(byte);
     }
@@ -129,7 +129,7 @@ impl TapeWriter {
         }
         let range = max - min + 1;
         let offset = count - min;
-        let base = rng.gen_range(0u8..=255);
+        let base = rng.random_range(0u8..=255);
         let byte = base.wrapping_sub(base % range as u8).wrapping_add(offset as u8);
         self.bytes.push(byte);
     }

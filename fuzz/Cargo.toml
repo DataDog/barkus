@@ -13,7 +13,7 @@ barkus-core = { path = "../crates/barkus-core" }
 barkus-ebnf = { path = "../crates/barkus-ebnf" }
 barkus-peg = { path = "../crates/barkus-peg" }
 barkus-antlr = { path = "../crates/barkus-antlr" }
-rand = { version = "0.8", features = ["small_rng"] }
+rand = "0.10"
 
 [workspace]
 

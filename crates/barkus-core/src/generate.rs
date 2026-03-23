@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use crate::ast::{Ast, AstNodeKind};
 use crate::error::{BudgetKind, GenerateError};
@@ -144,7 +144,7 @@ fn expand_production_gen<H: SemanticHooks>(
     // If this production has a semantic hook, consume a tape byte and ask the hook.
     if let Some(hook_name) = &prod.attrs.semantic_hook {
         let hook_name = hook_name.clone();
-        let tape_byte = rng.gen::<u8>();
+        let tape_byte = rng.random::<u8>();
         writer.write_choice(tape_byte as usize, 256, rng);
 
         if let Some(bytes) = hooks.on_production(&hook_name, tape_byte, prod_id) {
@@ -168,11 +168,11 @@ fn expand_production_gen<H: SemanticHooks>(
     let tape_start = writer.offset();
 
     let alt_idx = if eligible_buf.is_empty() {
-        let chosen = rng.gen_range(0..n_alts);
+        let chosen = rng.random_range(0..n_alts);
         writer.write_choice(chosen, n_alts, rng);
         chosen
     } else {
-        let chosen_eligible = rng.gen_range(0..eligible_buf.len());
+        let chosen_eligible = rng.random_range(0..eligible_buf.len());
         let alt_idx = eligible_buf[chosen_eligible];
         writer.write_choice(alt_idx, n_alts, rng);
         alt_idx
@@ -268,20 +268,20 @@ fn resolve_modifier_gen(
     match modifier {
         Modifier::Once => 1,
         Modifier::Optional => {
-            let chosen = rng.gen_range(0..2usize);
+            let chosen = rng.random_range(0..2usize);
             writer.write_choice(chosen, 2, rng);
             chosen as u32
         }
         Modifier::ZeroOrMore { min, max } => {
             let hi = (*max).min(profile.repetition_bounds.1);
-            let count = rng.gen_range(*min..=hi);
+            let count = rng.random_range(*min..=hi);
             writer.write_repetition(count, *min, hi, rng);
             count
         }
         Modifier::OneOrMore { min, max } => {
             let lo = (*min).max(1);
             let hi = (*max).min(profile.repetition_bounds.1);
-            let count = rng.gen_range(lo..=hi);
+            let count = rng.random_range(lo..=hi);
             writer.write_repetition(count, lo, hi, rng);
             count
         }
@@ -327,24 +327,24 @@ fn emit_terminal_gen<H: SemanticHooks>(
                 writer.write_choice(0, 1, rng);
                 return vec![0];
             }
-            let idx = rng.gen_range(0..valid_bytes.len());
+            let idx = rng.random_range(0..valid_bytes.len());
             writer.write_choice(idx, valid_bytes.len(), rng);
             vec![valid_bytes[idx]]
         }
         TerminalKind::AnyByte => {
-            let byte = rng.gen_range(0u8..=255);
+            let byte = rng.random_range(0u8..=255);
             writer.write_choice(byte as usize, 256, rng);
             vec![byte]
         }
         TerminalKind::ByteRange(lo, hi) => {
             let range = (*hi as usize - *lo as usize) + 1;
-            let idx = rng.gen_range(0..range);
+            let idx = rng.random_range(0..range);
             writer.write_choice(idx, range, rng);
             vec![*lo + idx as u8]
         }
         TerminalKind::TokenPool(pool_id) => {
             // Consume a tape byte for the pool decision.
-            let tape_byte = rng.gen::<u8>();
+            let tape_byte = rng.random::<u8>();
             writer.write_choice(tape_byte as usize, 256, rng);
 
             // Ask the hook first.
@@ -408,18 +408,18 @@ fn emit_terminal_gen_no_hooks(
                 writer.write_choice(0, 1, rng);
                 return vec![0];
             }
-            let idx = rng.gen_range(0..valid_bytes.len());
+            let idx = rng.random_range(0..valid_bytes.len());
             writer.write_choice(idx, valid_bytes.len(), rng);
             vec![valid_bytes[idx]]
         }
         TerminalKind::AnyByte => {
-            let byte = rng.gen_range(0u8..=255);
+            let byte = rng.random_range(0u8..=255);
             writer.write_choice(byte as usize, 256, rng);
             vec![byte]
         }
         TerminalKind::ByteRange(lo, hi) => {
             let range = (*hi as usize - *lo as usize) + 1;
-            let idx = rng.gen_range(0..range);
+            let idx = rng.random_range(0..range);
             writer.write_choice(idx, range, rng);
             vec![*lo + idx as u8]
         }

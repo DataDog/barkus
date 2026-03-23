@@ -57,7 +57,7 @@ unsafe fn write_to_buffer(src: &[u8], dst: *mut u8, dst_len: *mut usize, label: 
 
 fn make_rng(seed: u64) -> SmallRng {
     if seed == 0 {
-        SmallRng::from_entropy()
+        rand::make_rng()
     } else {
         SmallRng::seed_from_u64(seed)
     }
