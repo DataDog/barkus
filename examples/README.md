@@ -16,48 +16,52 @@ This is the core mechanism for exploring the space of near-valid inputs.
 4. Feed to your system under test
 ```
 
+The same `Generator` / `Decode` API is used inside fuzz tests and outside of them.
+You can call it from a one-shot CLI, a load generator, or a replay tool — the fuzz
+harnesses below just let `go test -fuzz` / `cargo fuzz` mutate the seed tapes for you.
+
 ## Examples
 
-### Go: fuzz test with `go test -fuzz`
+### Go: `go test -fuzz`
 
 Seed corpus with decision tapes, then let the Go fuzzer mutate them.
 
-- **[go-fuzz-json/](go-fuzz-json/)** — Fuzz a JSON parser. Generates JSON tapes as seeds,
-  decodes mutated tapes, feeds output to `encoding/json`.
+- **[go-fuzz-json/](go-fuzz-json/)** — Fuzz `encoding/json` by decoding mutated tapes
+  into JSON-shaped strings.
 - **[go-fuzz-sql/](go-fuzz-sql/)** — Fuzz a SQL parser. Uses `SQLGenerator` with a custom
   PostgreSQL schema.
 
 ```bash
-# Run the JSON fuzz test for 10 seconds
 make ffi
 go test ./examples/go-fuzz-json/ -fuzz=FuzzJSON -fuzztime=10s
-
-# Run the SQL fuzz test for 10 seconds
-go test ./examples/go-fuzz-sql/ -fuzz=FuzzSQL -fuzztime=10s
+go test ./examples/go-fuzz-sql/  -fuzz=FuzzSQL  -fuzztime=10s
 ```
 
-### Go: manual tape manipulation
+### Rust: `cargo fuzz`
 
-Flip individual tape bytes and decode to see exactly what changes.
+Same pattern as the Go example, using libFuzzer via [`cargo-fuzz`](https://rust-fuzz.github.io/book/cargo-fuzz.html).
 
-- **[tape-exploration/](tape-exploration/)** — Standalone program that generates a JSON
-  output + tape, flips each body byte one at a time, and prints the resulting output.
+- **[rust-fuzz-json/](rust-fuzz-json/)** — Decodes mutated tapes and feeds the output to
+  `serde_json`.
 
 ```bash
-make ffi
-go run ./examples/tape-exploration/
+# One-time install
+cargo install cargo-fuzz
+
+cargo +nightly fuzz run fuzz_json --fuzz-dir examples/rust-fuzz-json
 ```
 
-### Rust: direct mutation operators
-
-Use `barkus-core`'s mutation engine to apply targeted structural mutations.
-
-- **[rust-tape-mutation/](rust-tape-mutation/)** — Demonstrates all six mutation operators
-  (point mutate, range re-randomize, splice, subtree regenerate, toggle optional, perturb
-  repetition) and shows how each one changes the output.
+Optionally seed the corpus with valid tapes for faster coverage. The CLI emits
+hex tapes on stderr; convert each to a binary file in the corpus directory:
 
 ```bash
-cargo run -p rust-tape-mutation
+mkdir -p examples/rust-fuzz-json/corpus/fuzz_json
+cargo run -q -p barkus-cli -- \
+  generate fixtures/grammars/json.ebnf --count 32 --seed 1 --emit-tape 2>&1 1>/dev/null \
+  | awk '{print > ("examples/rust-fuzz-json/corpus/fuzz_json/seed-" NR ".hex")}'
+for f in examples/rust-fuzz-json/corpus/fuzz_json/seed-*.hex; do
+  xxd -r -p "$f" > "${f%.hex}" && rm "$f"
+done
 ```
 
 ### CLI: quick tape round-trip

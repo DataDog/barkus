@@ -1,0 +1,26 @@
+# cargo-fuzz package — its own workspace so the surrounding barkus workspace
+# doesn't try to include it (cargo-fuzz uses libfuzzer-sys, which builds
+# differently from a normal workspace member).
+[package]
+name = "rust-fuzz-json"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+barkus-core = { path = "../../crates/barkus-core" }
+barkus-ebnf = { path = "../../crates/barkus-ebnf" }
+
+[[bin]]
+name = "fuzz_json"
+path = "fuzz_targets/fuzz_json.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

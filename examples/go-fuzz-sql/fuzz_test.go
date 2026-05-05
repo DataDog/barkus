@@ -1,4 +1,8 @@
 // Package sqlfuzz is an example of tape-based SQL fuzzing with barkus.
+//
+// The pattern is not test-only: the same SQLGenerator API can be used
+// outside *_test.go to produce SQL payloads at runtime. The fuzz harness
+// here just lets `go test -fuzz` mutate the seed tapes for you.
 package sqlfuzz
 
 import (
@@ -7,6 +11,12 @@ import (
 	"github.com/DataDog/barkus/go/pkg/barkus"
 )
 
+// schema describes the tables and columns the generator may reference.
+//
+// Without it, the generator has no real identifiers to plug into FROM /
+// SELECT / WHERE / JOIN, so generated SQL would either fail validation or
+// look generic. Pass your own schema to fuzz a parser/planner against the
+// shapes it actually sees in production.
 var schema = barkus.Schema{
 	Tables: []barkus.Table{
 		{
@@ -29,6 +39,14 @@ var schema = barkus.Schema{
 	},
 }
 
+// newGen builds a SQLGenerator. NewSQLGenerator takes the dialect plus
+// functional options:
+//
+//	WithSchema / WithSchemaJSON — provide the table/column metadata.
+//	WithSeed                    — RNG seed; 0 means non-deterministic.
+//	WithMaxDepth                — derivation depth cap (default 20).
+//	WithMaxTotalNodes           — hard cap on AST size.
+//	WithValidityMode            — Strict / NearValid / Havoc.
 func newGen(t testing.TB, seed uint64) *barkus.SQLGenerator {
 	t.Helper()
 	gen, err := barkus.NewSQLGenerator(barkus.PostgreSQL,
@@ -42,6 +60,8 @@ func newGen(t testing.TB, seed uint64) *barkus.SQLGenerator {
 }
 
 func TestSeedCorpus(t *testing.T) {
+	// 64 KiB is generous for most SQL outputs and tapes. Size to fit your
+	// largest expected output; the call returns an error on overflow.
 	buf := make([]byte, 64*1024)
 	tapeBuf := make([]byte, 64*1024)
 	decodeBuf := make([]byte, 64*1024)

@@ -1,4 +1,9 @@
 // Package jsonfuzz is an example of tape-based fuzzing with barkus.
+//
+// The pattern is not test-only: the same Generator / Decode API can be
+// used outside *_test.go to produce payloads at runtime — e.g. for load
+// generators, replay tools, or stand-alone CLI fuzzers. The fuzz harness
+// here just lets `go test -fuzz` mutate the seed tapes for you.
 package jsonfuzz
 
 import (
@@ -21,12 +26,18 @@ func TestMain(m *testing.M) {
 }
 
 func TestSeedCorpus(t *testing.T) {
+	// NewGenerator(source, seed, maxDepth):
+	//   seed     — RNG seed; 0 means non-deterministic.
+	//   maxDepth — derivation depth cap; 0 uses the default (20).
 	gen, err := barkus.NewGenerator(jsonGrammar, 42, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer gen.Close()
 
+	// 64 KiB is generous for most grammars. Size to fit your largest expected
+	// output / tape; the call returns an error (not a panic) on overflow,
+	// so you can grow and retry if you don't know the upper bound.
 	buf := make([]byte, 64*1024)
 	tapeBuf := make([]byte, 64*1024)
 
