@@ -1,0 +1,60 @@
+[package]
+name = "resvg-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libfuzzer-sys = "=0.4.10"
+
+# Parse-only path: usvg is the SVG-to-tree parser inside resvg. We avoid
+# pulling in the rendering crate (which depends on tiny-skia / image
+# libraries) since this benchmark only needs the parser surface.
+usvg = { git = "https://github.com/linebender/resvg.git", rev = "3a0fdba53ccf2d346b54cc53ba7adf0ee60d0707", package = "usvg" }
+
+barkus-core = { path = "../../../../crates/barkus-core" }
+barkus-ebnf = { path = "../../../../crates/barkus-ebnf" }
+
+[[bin]]
+name = "barkus_strict"
+path = "fuzz_targets/barkus_strict.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "barkus_nearvalid"
+path = "fuzz_targets/barkus_nearvalid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "barkus_havoc"
+path = "fuzz_targets/barkus_havoc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "arbitrary"
+path = "fuzz_targets/arbitrary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raw"
+path = "fuzz_targets/raw.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

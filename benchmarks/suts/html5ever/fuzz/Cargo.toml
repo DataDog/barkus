@@ -1,0 +1,56 @@
+[package]
+name = "html5ever-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libfuzzer-sys = "=0.4.10"
+html5ever = "=0.27.0"
+markup5ever_rcdom = "=0.3.0"
+barkus-core = { path = "../../../../crates/barkus-core" }
+barkus-ebnf = { path = "../../../../crates/barkus-ebnf" }
+
+[[bin]]
+name = "barkus_strict"
+path = "fuzz_targets/barkus_strict.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "barkus_nearvalid"
+path = "fuzz_targets/barkus_nearvalid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "barkus_havoc"
+path = "fuzz_targets/barkus_havoc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "arbitrary"
+path = "fuzz_targets/arbitrary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raw"
+path = "fuzz_targets/raw.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

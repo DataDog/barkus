@@ -1,0 +1,5 @@
+repo=https://github.com/pganalyze/pg_query_go.git
+commit=6a1adb4a50b66ca95f2bb34409697c586e18fa28
+tag=v6.2.2
+go_module=github.com/pganalyze/pg_query_go/v6
+gofuzzheaders_commit=e8a1dd7889d65b8a6f02175e0d79d7c0557db7f9
