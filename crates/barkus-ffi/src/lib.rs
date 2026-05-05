@@ -5,6 +5,7 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
+use std::sync::Mutex;
 
 use barkus_core::generate::{decode, generate};
 use barkus_core::ir::GrammarIr;
@@ -19,16 +20,24 @@ use barkus_sql::dialect::{
 };
 use barkus_sql::SqlGenerator;
 
+/// Compiled grammar handle. `ir` and `profile` are immutable after compile;
+/// `rng` is wrapped in a Mutex so a Handle can be shared across threads:
+/// `barkus_decode` (which never consults rng) is wait-free across any number
+/// of goroutines, and `barkus_generate` (which does consume rng) serializes
+/// on the mutex. `unsafe impl Sync` makes this contract visible to Go's
+/// cgo layer, which carries no automatic Sync inference.
 struct Handle {
     ir: GrammarIr,
     profile: Profile,
-    rng: SmallRng,
+    rng: Mutex<SmallRng>,
 }
+unsafe impl Sync for Handle {}
 
 struct SqlHandle {
     gen: SqlGenerator,
-    rng: SmallRng,
+    rng: Mutex<SmallRng>,
 }
+unsafe impl Sync for SqlHandle {}
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
@@ -110,7 +119,7 @@ pub unsafe extern "C" fn barkus_compile(
     let handle = Box::new(Handle {
         ir,
         profile,
-        rng: make_rng(seed),
+        rng: Mutex::new(make_rng(seed)),
     });
     Box::into_raw(handle)
 }
@@ -236,7 +245,7 @@ pub unsafe extern "C" fn barkus_compile_with_config(
     let handle = Box::new(Handle {
         ir,
         profile,
-        rng: make_rng(seed),
+        rng: Mutex::new(make_rng(seed)),
     });
     Box::into_raw(handle)
 }
@@ -246,16 +255,20 @@ pub unsafe extern "C" fn barkus_compile_with_config(
 /// On success, `*output_len` is set to the actual length and returns 0.
 /// On failure, returns -1 (call `barkus_last_error`).
 ///
+/// Concurrency: safe to call from multiple threads on the same handle;
+/// the call serializes on an internal RNG mutex (cheap because generate
+/// is invoked far less often than decode in fuzz harnesses).
+///
 /// # Safety
 /// `handle` must be a valid pointer from `barkus_compile`. `output_buf` must
 /// have capacity `*output_len`. `output_len` must be non-null.
 #[no_mangle]
 pub unsafe extern "C" fn barkus_generate(
-    handle: *mut Handle,
+    handle: *const Handle,
     output_buf: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_mut() {
+    let h = match handle.as_ref() {
         Some(h) => h,
         None => {
             set_last_error("generate error: null handle");
@@ -263,7 +276,8 @@ pub unsafe extern "C" fn barkus_generate(
         }
     };
 
-    let (ast, _tape, _map) = match generate(&h.ir, &h.profile, &mut h.rng) {
+    let mut rng = h.rng.lock().expect("generate: rng mutex poisoned");
+    let (ast, _tape, _map) = match generate(&h.ir, &h.profile, &mut *rng) {
         Ok(result) => result,
         Err(e) => {
             set_last_error(&format!("generate error: {e}"));
@@ -285,13 +299,13 @@ pub unsafe extern "C" fn barkus_generate(
 /// and `tape_len` must be non-null.
 #[no_mangle]
 pub unsafe extern "C" fn barkus_generate_with_tape(
-    handle: *mut Handle,
+    handle: *const Handle,
     output_buf: *mut u8,
     output_len: *mut usize,
     tape_buf: *mut u8,
     tape_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_mut() {
+    let h = match handle.as_ref() {
         Some(h) => h,
         None => {
             set_last_error("generate error: null handle");
@@ -299,7 +313,8 @@ pub unsafe extern "C" fn barkus_generate_with_tape(
         }
     };
 
-    let (ast, tape, _map) = match generate(&h.ir, &h.profile, &mut h.rng) {
+    let mut rng = h.rng.lock().expect("generate: rng mutex poisoned");
+    let (ast, tape, _map) = match generate(&h.ir, &h.profile, &mut *rng) {
         Ok(result) => result,
         Err(e) => {
             set_last_error(&format!("generate error: {e}"));
@@ -321,18 +336,22 @@ pub unsafe extern "C" fn barkus_generate_with_tape(
 /// On success, `*output_len` is set to actual length and returns 0.
 /// On failure, returns -1.
 ///
+/// Concurrency: safe to call from multiple threads on the same handle.
+/// Decode reads `ir` and `profile` only; it never consults the RNG, so
+/// no synchronization is needed.
+///
 /// # Safety
 /// `handle` must be a valid pointer from `barkus_compile`. `tape_ptr` must point to
 /// `tape_len` bytes. `output_buf` must have capacity `*output_len`.
 #[no_mangle]
 pub unsafe extern "C" fn barkus_decode(
-    handle: *mut Handle,
+    handle: *const Handle,
     tape_ptr: *const u8,
     tape_len: usize,
     output_buf: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_mut() {
+    let h = match handle.as_ref() {
         Some(h) => h,
         None => {
             set_last_error("decode error: null handle");
@@ -493,20 +512,26 @@ pub unsafe extern "C" fn barkus_sql_compile(
         }
     };
 
-    Box::into_raw(Box::new(SqlHandle { gen, rng: make_rng(seed) }))
+    Box::into_raw(Box::new(SqlHandle {
+        gen,
+        rng: Mutex::new(make_rng(seed)),
+    }))
 }
 
 /// Generate one SQL string.
+///
+/// Concurrency: safe to call from multiple threads on the same handle;
+/// serializes on the SqlHandle's internal RNG mutex.
 ///
 /// # Safety
 /// `handle` must be from `barkus_sql_compile`. `output_buf` capacity = `*output_len`.
 #[no_mangle]
 pub unsafe extern "C" fn barkus_sql_generate(
-    handle: *mut SqlHandle,
+    handle: *const SqlHandle,
     output_buf: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_mut() {
+    let h = match handle.as_ref() {
         Some(h) => h,
         None => {
             set_last_error("sql generate error: null handle");
@@ -514,7 +539,8 @@ pub unsafe extern "C" fn barkus_sql_generate(
         }
     };
 
-    let (sql, _tape, _map) = match h.gen.generate(&mut h.rng) {
+    let mut rng = h.rng.lock().expect("sql generate: rng mutex poisoned");
+    let (sql, _tape, _map) = match h.gen.generate(&mut *rng) {
         Ok(r) => r,
         Err(e) => {
             set_last_error(&format!("sql generate error: {e}"));
@@ -531,13 +557,13 @@ pub unsafe extern "C" fn barkus_sql_generate(
 /// Same as `barkus_sql_generate`, plus `tape_buf` capacity = `*tape_len`.
 #[no_mangle]
 pub unsafe extern "C" fn barkus_sql_generate_with_tape(
-    handle: *mut SqlHandle,
+    handle: *const SqlHandle,
     output_buf: *mut u8,
     output_len: *mut usize,
     tape_buf: *mut u8,
     tape_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_mut() {
+    let h = match handle.as_ref() {
         Some(h) => h,
         None => {
             set_last_error("sql generate error: null handle");
@@ -545,7 +571,8 @@ pub unsafe extern "C" fn barkus_sql_generate_with_tape(
         }
     };
 
-    let (sql, tape, _map) = match h.gen.generate(&mut h.rng) {
+    let mut rng = h.rng.lock().expect("sql generate: rng mutex poisoned");
+    let (sql, tape, _map) = match h.gen.generate(&mut *rng) {
         Ok(r) => r,
         Err(e) => {
             set_last_error(&format!("sql generate error: {e}"));
@@ -562,18 +589,21 @@ pub unsafe extern "C" fn barkus_sql_generate_with_tape(
 
 /// Replay a decision tape to reproduce SQL output.
 ///
+/// Concurrency: safe to call from multiple threads on the same handle;
+/// decode reads only the immutable compiled grammar.
+///
 /// # Safety
 /// `handle` from `barkus_sql_compile`. `tape_ptr` has `tape_len` bytes.
 /// `output_buf` capacity = `*output_len`.
 #[no_mangle]
 pub unsafe extern "C" fn barkus_sql_decode(
-    handle: *mut SqlHandle,
+    handle: *const SqlHandle,
     tape_ptr: *const u8,
     tape_len: usize,
     output_buf: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_mut() {
+    let h = match handle.as_ref() {
         Some(h) => h,
         None => {
             set_last_error("sql decode error: null handle");
