@@ -338,8 +338,8 @@ pub unsafe extern "C" fn barkus_sql_compile(
     match dialect_str {
         "postgresql" => {
             builder = builder.dialect(PostgresDialect).grammar(
-                include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLLexer.g4"),
-                include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLParser.g4"),
+                include_str!("../../../grammars/postgresql/PostgreSQLLexer.g4"),
+                include_str!("../../../grammars/postgresql/PostgreSQLParser.g4"),
             );
         }
         "sqlite" => {
@@ -348,8 +348,8 @@ pub unsafe extern "C" fn barkus_sql_compile(
         }
         "trino" => {
             builder = builder.dialect(TrinoDialect).grammar(
-                include_str!("../../../grammars/antlr-sql/trino/TrinoLexer.g4"),
-                include_str!("../../../grammars/antlr-sql/trino/TrinoParser.g4"),
+                include_str!("../../../grammars/trino/TrinoLexer.g4"),
+                include_str!("../../../grammars/trino/TrinoParser.g4"),
             );
         }
         "generic" => {

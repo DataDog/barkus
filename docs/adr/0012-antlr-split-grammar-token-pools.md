@@ -27,10 +27,10 @@ Chosen option: **Option 1 — TokenPool + hooks unifies lexer expansion and sema
 
 ### Grammar vendoring
 
-ANTLR SQL grammars are vendored into `grammars/antlr-sql/` at the repository root:
+ANTLR SQL grammars are vendored into `grammars/` at the repository root:
 
 ```
-grammars/antlr-sql/
+grammars/
 ├── postgresql/
 │   ├── PostgreSQLLexer.g4
 │   ├── PostgreSQLParser.g4

@@ -202,8 +202,8 @@ fn options_block_skipped() {
 
 #[test]
 fn sqlite_grammar_compiles() {
-    let lexer_src = include_str!("../../../grammars/antlr-sql/sqlite/SQLiteLexer.g4");
-    let parser_src = include_str!("../../../grammars/antlr-sql/sqlite/SQLiteParser.g4");
+    let lexer_src = include_str!("../../../grammars/sqlite/SQLiteLexer.g4");
+    let parser_src = include_str!("../../../grammars/sqlite/SQLiteParser.g4");
     let ir = compile_split(lexer_src, parser_src).unwrap();
     // Basic sanity: should have multiple productions and some token pools.
     assert!(
@@ -221,8 +221,8 @@ fn sqlite_grammar_compiles() {
 
 #[test]
 fn sqlite_grammar_generates() {
-    let lexer_src = include_str!("../../../grammars/antlr-sql/sqlite/SQLiteLexer.g4");
-    let parser_src = include_str!("../../../grammars/antlr-sql/sqlite/SQLiteParser.g4");
+    let lexer_src = include_str!("../../../grammars/sqlite/SQLiteLexer.g4");
+    let parser_src = include_str!("../../../grammars/sqlite/SQLiteParser.g4");
     let ir = compile_split(lexer_src, parser_src).unwrap();
     // Generate with many seeds — at least some should produce non-empty output.
     // Use a higher max_depth since real SQL grammars are deeply recursive.
