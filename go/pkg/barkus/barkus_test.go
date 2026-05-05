@@ -152,3 +152,41 @@ func TestDecodeInvalidTape(t *testing.T) {
 		t.Fatal("expected error for nil tape")
 	}
 }
+
+// Cross-format smoke: WithFormat lets the same NewGeneratorWithOptions
+// constructor consume EBNF, ANTLR, and PEG grammars. This exercises the
+// format-agnostic option machinery — a regression here means GrammarOption
+// is once again coupled to a single format.
+func TestGrammarFormats(t *testing.T) {
+	cases := []struct {
+		name   string
+		format GrammarFormat
+		source string
+		want   string
+	}{
+		{"ebnf", GrammarEbnf, `start = "ebnf-ok" ;`, "ebnf-ok"},
+		{"antlr", GrammarAntlr, `grammar G; start: 'antlr-ok' ;`, "antlr-ok"},
+		{"peg", GrammarPeg, `start <- "peg-ok"`, "peg-ok"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g, err := NewGeneratorWithOptions(tc.source,
+				WithFormat(tc.format),
+				WithSeed(1),
+			)
+			if err != nil {
+				t.Fatalf("compile %s: %v", tc.format, err)
+			}
+			defer g.Close()
+
+			buf := make([]byte, 1024)
+			out, err := g.Generate(buf)
+			if err != nil {
+				t.Fatalf("Generate %s: %v", tc.format, err)
+			}
+			if string(out) != tc.want {
+				t.Errorf("%s: got %q, want %q", tc.format, string(out), tc.want)
+			}
+		})
+	}
+}
