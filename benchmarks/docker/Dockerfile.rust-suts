@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1.7
+#
+# Rust SUT image (milestone M5+). Inherits barkus-base which already pins
+# stable Rust 1.95.0; this image layers a pinned NIGHTLY toolchain and
+# cargo-fuzz on top because libFuzzer requires `-Zsanitizer=fuzzer` (a
+# nightly-only flag).
+#
+# Build context: repo root. Invoke via:
+#   docker build -f benchmarks/docker/Dockerfile.rust-suts -t barkus-rust-suts:dev .
+
+FROM barkus-base:dev
+
+# Pinned nightly — bumped in lockstep with each suts/<rust-sut>/pin.txt.
+ARG RUST_NIGHTLY=nightly-2026-04-15
+ARG CARGO_FUZZ_VERSION=0.12.0
+
+# Install the pinned nightly toolchain (minimal profile + rust-src for
+# cargo-fuzz's -Zbuild-std needs).
+RUN rustup toolchain install ${RUST_NIGHTLY} --profile minimal --component rust-src
+
+# cargo-fuzz pinned to the version recorded in each Rust SUT's pin.txt.
+RUN cargo install cargo-fuzz --version ${CARGO_FUZZ_VERSION} --locked
+
+# Bring in all SUT sources so build.sh scripts run inside the image.
+COPY benchmarks/suts /src/barkus/benchmarks/suts
+
+# Pre-build each Rust SUT's fuzz harnesses. Each build.sh exports
+# GIT_CONFIG_GLOBAL=/dev/null to defeat any host-level https→ssh insteadOf
+# rule that would break unauthenticated git deps.
+WORKDIR /src/barkus/benchmarks/suts/rust-cssparser
+RUN bash build.sh
+
+WORKDIR /src/barkus/benchmarks/suts/resvg
+RUN bash build.sh
+
+WORKDIR /src/barkus
+CMD ["bash"]

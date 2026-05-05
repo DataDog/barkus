@@ -5,3 +5,21 @@ barkus-gen
 # cargo-fuzz artifacts and corpus
 fuzz/artifacts/
 fuzz/corpus/
+
+# Benchmark suite — generated artifacts only; sources/configs are tracked.
+benchmarks/results/
+benchmarks/reports/
+benchmarks/versions.lock
+benchmarks/**/__pycache__/
+benchmarks/.venv/
+benchmarks/suts/*/harness/*.test
+benchmarks/suts/*/harness/testdata/
+benchmarks/suts/*/target/
+benchmarks/suts/*/fuzz/target/
+benchmarks/suts/*/Cargo.lock
+benchmarks/suts/*/fuzz/Cargo.lock
+# C SUT harness build artifacts (libxml2, future libxml2/openssl/etc).
+benchmarks/suts/libxml2/barkus_strict
+benchmarks/suts/libxml2/barkus_nearvalid
+benchmarks/suts/libxml2/barkus_havoc
+benchmarks/suts/libxml2/raw

@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1.7
+#
+# C SUT image (milestone M6+). Inherits barkus-base which already pins
+# clang-17, AFL++ v4.21c, and libbarkus_ffi.a.
+#
+# Engine note: M6's host smoke validation uses clang -fsanitize=fuzzer
+# (libFuzzer) because AFL++ v4.21c does not build against host clang-20.
+# Inside this image, clang-17 is available so AFL++ LLVM mode WORKS;
+# this Dockerfile prefers afl-clang-fast and falls back to libFuzzer for
+# parity with the host. Either path produces the same harness binary
+# names, and the orchestrator's libfuzzer engine wraps both since
+# afl-clang-fast also links a libFuzzer-compat persistent loop.
+#
+# Build context: repo root.
+
+FROM barkus-base:dev
+
+# libxml2 from source — distro-pinned tag, NOT `apt-get install` (per the
+# plan's bias-control, distro libxml2 versions vary between hosts and
+# would make M9 results non-reproducible).
+ARG LIBXML2_TAG=v2.13.4
+ARG LIBXML2_REPO=https://gitlab.gnome.org/GNOME/libxml2.git
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        autoconf automake libtool pkg-config \
+        zlib1g-dev liblzma-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch ${LIBXML2_TAG} ${LIBXML2_REPO} /tmp/libxml2 \
+    && cd /tmp/libxml2 \
+    && ./autogen.sh --prefix=/opt/libxml2 --without-python --without-zlib --without-lzma \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd / && rm -rf /tmp/libxml2
+
+ENV PKG_CONFIG_PATH="/opt/libxml2/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
+    LD_LIBRARY_PATH="/opt/libxml2/lib:${LD_LIBRARY_PATH:-}"
+
+# Bring in C SUT harness sources and build them.
+COPY benchmarks/suts/libxml2 /src/barkus/benchmarks/suts/libxml2
+
+WORKDIR /src/barkus/benchmarks/suts/libxml2
+# Use afl-clang-fast inside the image (clang-17 + AFL++ v4.21c is the
+# tested combination in barkus-base). build.sh's CC env var lets us
+# pick the compiler; afl-clang-fast emits libFuzzer-compatible binaries.
+RUN CC=afl-clang-fast bash build.sh
+
+WORKDIR /src/barkus
+CMD ["bash"]

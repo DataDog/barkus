@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1.7
+#
+# Go SUT image (milestone M3+). Inherits barkus-base which already pins Go
+# 1.26.1 (`tar -xz` of the upstream tarball at digest pin), AFL++, clang-17,
+# Rust toolchain, and the built libbarkus_ffi.a.
+#
+# This image clones each Go SUT at its pinned commit and pre-builds the
+# instrumented test binary (via `go test -fuzz=. -c`) so the orchestrator's
+# `smoke` and `full` stages can launch fuzz cells without per-cell build
+# latency.
+#
+# Build context: repo root (so `COPY benchmarks/...` reaches the harness
+# sources). Invoke via:
+#
+#   docker build -f benchmarks/docker/Dockerfile.go-suts -t barkus-go-suts:dev .
+
+FROM barkus-base:dev
+
+ENV GOTOOLCHAIN=local \
+    GOFLAGS="-mod=mod" \
+    BARKUS_JSON_GRAMMAR=/opt/barkus/share/json.ebnf
+
+# Bring in the SUT harness sources. Each SUT is its own Go module under
+# benchmarks/suts/<id>/harness. The Barkus Go package is loaded via a relative
+# `replace` in each harness's go.mod, so the full Barkus source must be
+# present at /src/barkus (already there from Dockerfile.base's COPY steps).
+COPY benchmarks/suts /src/barkus/benchmarks/suts
+
+# Build each SUT's harness. Idempotent; re-run cheap thanks to GOCACHE.
+WORKDIR /src/barkus/benchmarks/suts/simdjson-go
+RUN bash build.sh
+
+WORKDIR /src/barkus
+CMD ["bash"]

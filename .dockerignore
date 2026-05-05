@@ -1,0 +1,10 @@
+.git/
+.github/
+target/
+fuzz/corpus/
+fuzz/artifacts/
+benchmarks/results/
+benchmarks/reports/
+benchmarks/versions.lock
+**/node_modules/
+**/.DS_Store
