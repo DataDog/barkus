@@ -44,7 +44,7 @@ func runGenerate(args []string) {
 	seed := fs.Uint64("seed", 0, "RNG seed (0 = random)")
 	maxDepth := fs.Uint("max-depth", 0, "max derivation depth (0 = default)")
 	emitTape := fs.Bool("emit-tape", false, "emit hex-encoded tape to stderr")
-	fs.Parse(args)
+	_ = fs.Parse(args) // flag.ExitOnError makes Parse exit on error; never returns non-nil
 
 	if *grammar == "" {
 		fmt.Fprintln(os.Stderr, "error: -grammar is required")
@@ -93,7 +93,7 @@ func runDecode(args []string) {
 	grammar := fs.String("grammar", "", "path to EBNF grammar file")
 	tapeFlag := fs.String("tape", "", "hex-encoded tape, or '-' for stdin")
 	maxDepth := fs.Uint("max-depth", 0, "max derivation depth (0 = default)")
-	fs.Parse(args)
+	_ = fs.Parse(args) // flag.ExitOnError makes Parse exit on error; never returns non-nil
 
 	if *grammar == "" {
 		fmt.Fprintln(os.Stderr, "error: -grammar is required")

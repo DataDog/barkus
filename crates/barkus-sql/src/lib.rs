@@ -158,9 +158,9 @@ impl SqlGeneratorBuilder {
 
     /// Build the generator, compiling the grammar.
     pub fn build(self) -> Result<SqlGenerator, SqlError> {
-        let lexer_src = self.lexer_source.unwrap_or_else(|| {
-            include_str!("../../../grammars/sqlite/SQLiteLexer.g4").to_string()
-        });
+        let lexer_src = self
+            .lexer_source
+            .unwrap_or_else(|| include_str!("../../../grammars/sqlite/SQLiteLexer.g4").to_string());
         let parser_src = self.parser_source.unwrap_or_else(|| {
             include_str!("../../../grammars/sqlite/SQLiteParser.g4").to_string()
         });

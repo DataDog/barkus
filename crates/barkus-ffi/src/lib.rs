@@ -216,10 +216,11 @@ pub unsafe extern "C" fn barkus_compile_with_config(
         }
     };
 
-    let config: GrammarConfig = match parse_optional_config(config_json, config_json_len, "compile error") {
-        Some(c) => c,
-        None => return ptr::null_mut(),
-    };
+    let config: GrammarConfig =
+        match parse_optional_config(config_json, config_json_len, "compile error") {
+            Some(c) => c,
+            None => return ptr::null_mut(),
+        };
 
     let ir_result = match config.format {
         GrammarFormat::Ebnf => barkus_ebnf::compile(src).map_err(|e| e.to_string()),
@@ -449,10 +450,11 @@ pub unsafe extern "C" fn barkus_sql_compile(
         }
     };
 
-    let config: SqlConfig = match parse_optional_config(config_json, config_json_len, "sql compile error") {
-        Some(c) => c,
-        None => return ptr::null_mut(),
-    };
+    let config: SqlConfig =
+        match parse_optional_config(config_json, config_json_len, "sql compile error") {
+            Some(c) => c,
+            None => return ptr::null_mut(),
+        };
 
     let profile = apply_profile_overrides(
         Profile::builder(),

@@ -213,7 +213,7 @@ fn render_production_table(out: &mut String, stats: &CorpusStats) {
 
     // Sort by hit count descending
     let mut prods: Vec<_> = stats.productions.iter().collect();
-    prods.sort_by(|a, b| b.hit_count.cmp(&a.hit_count));
+    prods.sort_by_key(|p| std::cmp::Reverse(p.hit_count));
 
     let alt_bar_width = 20;
 
