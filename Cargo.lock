@@ -135,6 +135,7 @@ dependencies = [
  "barkus-antlr",
  "barkus-core",
  "barkus-ebnf",
+ "barkus-peg",
  "barkus-sql",
  "rand",
  "serde",

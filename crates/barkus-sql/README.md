@@ -55,8 +55,8 @@ let gen = SqlGenerator::builder()
     .context(ctx)
     .dialect(PostgresDialect)
     .grammar(
-        include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLLexer.g4"),
-        include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLParser.g4"),
+        include_str!("../../../grammars/postgresql/PostgreSQLLexer.g4"),
+        include_str!("../../../grammars/postgresql/PostgreSQLParser.g4"),
     )
     .build()?;
 
@@ -208,7 +208,7 @@ exact same output. This is useful for:
 
 | Dialect           | Rust type          | Grammar files                              |
 |-------------------|--------------------|--------------------------------------------|
-| SQLite (default)  | `SqliteDialect`    | `grammars/antlr-sql/sqlite/`               |
-| PostgreSQL        | `PostgresDialect`  | `grammars/antlr-sql/postgresql/`           |
-| Trino             | `TrinoDialect`     | `grammars/antlr-sql/trino/`               |
+| SQLite (default)  | `SqliteDialect`    | `grammars/sqlite/`               |
+| PostgreSQL        | `PostgresDialect`  | `grammars/postgresql/`           |
+| Trino             | `TrinoDialect`     | `grammars/trino/`               |
 | Generic (ANSI)    | `GenericDialect`   | (use with any grammar)                     |

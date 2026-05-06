@@ -159,10 +159,10 @@ impl SqlGeneratorBuilder {
     /// Build the generator, compiling the grammar.
     pub fn build(self) -> Result<SqlGenerator, SqlError> {
         let lexer_src = self.lexer_source.unwrap_or_else(|| {
-            include_str!("../../../grammars/antlr-sql/sqlite/SQLiteLexer.g4").to_string()
+            include_str!("../../../grammars/sqlite/SQLiteLexer.g4").to_string()
         });
         let parser_src = self.parser_source.unwrap_or_else(|| {
-            include_str!("../../../grammars/antlr-sql/sqlite/SQLiteParser.g4").to_string()
+            include_str!("../../../grammars/sqlite/SQLiteParser.g4").to_string()
         });
 
         let grammar = compile_split(&lexer_src, &parser_src)?;

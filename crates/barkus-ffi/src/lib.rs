@@ -14,7 +14,9 @@ use rand::rngs::SmallRng;
 use rand::SeedableRng;
 
 use barkus_sql::context::SqlContext;
-use barkus_sql::dialect::{GenericDialect, PostgresDialect, SqliteDialect, TrinoDialect};
+use barkus_sql::dialect::{
+    GenericDialect, MySqlDialect, PostgresDialect, SqliteDialect, TrinoDialect,
+};
 use barkus_sql::SqlGenerator;
 
 struct Handle {
@@ -105,9 +107,137 @@ pub unsafe extern "C" fn barkus_compile(
     }
     let profile = builder.build();
 
-    let rng = make_rng(seed);
+    let handle = Box::new(Handle {
+        ir,
+        profile,
+        rng: make_rng(seed),
+    });
+    Box::into_raw(handle)
+}
 
-    let handle = Box::new(Handle { ir, profile, rng });
+#[derive(serde::Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum GrammarFormat {
+    #[default]
+    Ebnf,
+    Antlr,
+    Peg,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct GrammarConfig {
+    max_depth: Option<u32>,
+    max_total_nodes: Option<u32>,
+    validity_mode: Option<barkus_core::profile::ValidityMode>,
+    #[serde(default)]
+    format: GrammarFormat,
+}
+
+/// Parse an optional JSON config blob from the FFI's (ptr, len) pair.
+/// Returns `Some(Default::default())` when the input is null/empty,
+/// `None` after setting last_error on a malformed payload.
+///
+/// # Safety
+/// `ptr` must be valid for `len` bytes (or null when `len == 0`).
+unsafe fn parse_optional_config<T>(ptr: *const u8, len: usize, label: &str) -> Option<T>
+where
+    T: Default + serde::de::DeserializeOwned,
+{
+    if ptr.is_null() || len == 0 {
+        return Some(T::default());
+    }
+    let bytes = slice::from_raw_parts(ptr, len);
+    match serde_json::from_slice(bytes) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            set_last_error(&format!("{label}: invalid config JSON: {e}"));
+            None
+        }
+    }
+}
+
+fn apply_profile_overrides(
+    mut b: barkus_core::profile::ProfileBuilder,
+    max_depth: Option<u32>,
+    max_total_nodes: Option<u32>,
+    validity_mode: Option<barkus_core::profile::ValidityMode>,
+) -> barkus_core::profile::ProfileBuilder {
+    if let Some(d) = max_depth {
+        b = b.max_depth(d);
+    }
+    if let Some(n) = max_total_nodes {
+        b = b.max_total_nodes(n);
+    }
+    if let Some(v) = validity_mode {
+        b = b.validity_mode(v);
+    }
+    b
+}
+
+/// Compile a grammar with a JSON config blob (`validity_mode`, `max_depth`,
+/// `max_total_nodes`, `format`). Pass null/0 for the config to use defaults.
+/// Returns null on error (call `barkus_last_error` for details).
+///
+/// # Safety
+/// `source` / `config_json` must point to valid bytes for their stated lengths
+/// (or be null when length is 0).
+#[no_mangle]
+pub unsafe extern "C" fn barkus_compile_with_config(
+    source: *const u8,
+    source_len: usize,
+    config_json: *const u8,
+    config_json_len: usize,
+    seed: u64,
+) -> *mut Handle {
+    if source.is_null() && source_len > 0 {
+        set_last_error("compile error: null source pointer with non-zero length");
+        return ptr::null_mut();
+    }
+
+    let src = if source_len == 0 {
+        ""
+    } else {
+        let bytes = slice::from_raw_parts(source, source_len);
+        match std::str::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                set_last_error(&format!("compile error: invalid UTF-8 source: {e}"));
+                return ptr::null_mut();
+            }
+        }
+    };
+
+    let config: GrammarConfig = match parse_optional_config(config_json, config_json_len, "compile error") {
+        Some(c) => c,
+        None => return ptr::null_mut(),
+    };
+
+    let ir_result = match config.format {
+        GrammarFormat::Ebnf => barkus_ebnf::compile(src).map_err(|e| e.to_string()),
+        GrammarFormat::Antlr => barkus_antlr::compile(src).map_err(|e| e.to_string()),
+        GrammarFormat::Peg => barkus_peg::compile(src).map_err(|e| e.to_string()),
+    };
+    let ir = match ir_result {
+        Ok(ir) => ir,
+        Err(e) => {
+            set_last_error(&format!("compile error: {e}"));
+            return ptr::null_mut();
+        }
+    };
+
+    let profile = apply_profile_overrides(
+        Profile::builder(),
+        config.max_depth,
+        config.max_total_nodes,
+        config.validity_mode,
+    )
+    .build();
+
+    let handle = Box::new(Handle {
+        ir,
+        profile,
+        rng: make_rng(seed),
+    });
     Box::into_raw(handle)
 }
 
@@ -202,7 +332,7 @@ pub unsafe extern "C" fn barkus_decode(
     output_buf: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_ref() {
+    let h = match handle.as_mut() {
         Some(h) => h,
         None => {
             set_last_error("decode error: null handle");
@@ -300,32 +430,18 @@ pub unsafe extern "C" fn barkus_sql_compile(
         }
     };
 
-    // Parse optional config JSON.
-    let config: SqlConfig = if config_json.is_null() || config_json_len == 0 {
-        SqlConfig::default()
-    } else {
-        let json_bytes = slice::from_raw_parts(config_json, config_json_len);
-        match serde_json::from_slice(json_bytes) {
-            Ok(c) => c,
-            Err(e) => {
-                set_last_error(&format!("sql compile error: invalid config JSON: {e}"));
-                return ptr::null_mut();
-            }
-        }
+    let config: SqlConfig = match parse_optional_config(config_json, config_json_len, "sql compile error") {
+        Some(c) => c,
+        None => return ptr::null_mut(),
     };
 
-    // Build profile.
-    let mut profile_builder = Profile::builder();
-    if let Some(d) = config.max_depth {
-        profile_builder = profile_builder.max_depth(d);
-    }
-    if let Some(n) = config.max_total_nodes {
-        profile_builder = profile_builder.max_total_nodes(n);
-    }
-    if let Some(v) = config.validity_mode {
-        profile_builder = profile_builder.validity_mode(v);
-    }
-    let profile = profile_builder.build();
+    let profile = apply_profile_overrides(
+        Profile::builder(),
+        config.max_depth,
+        config.max_total_nodes,
+        config.validity_mode,
+    )
+    .build();
 
     // Build generator with dialect + embedded grammar.
     let mut builder = SqlGenerator::builder().profile(profile);
@@ -338,8 +454,8 @@ pub unsafe extern "C" fn barkus_sql_compile(
     match dialect_str {
         "postgresql" => {
             builder = builder.dialect(PostgresDialect).grammar(
-                include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLLexer.g4"),
-                include_str!("../../../grammars/antlr-sql/postgresql/PostgreSQLParser.g4"),
+                include_str!("../../../grammars/postgresql/PostgreSQLLexer.g4"),
+                include_str!("../../../grammars/postgresql/PostgreSQLParser.g4"),
             );
         }
         "sqlite" => {
@@ -348,8 +464,14 @@ pub unsafe extern "C" fn barkus_sql_compile(
         }
         "trino" => {
             builder = builder.dialect(TrinoDialect).grammar(
-                include_str!("../../../grammars/antlr-sql/trino/TrinoLexer.g4"),
-                include_str!("../../../grammars/antlr-sql/trino/TrinoParser.g4"),
+                include_str!("../../../grammars/trino/TrinoLexer.g4"),
+                include_str!("../../../grammars/trino/TrinoParser.g4"),
+            );
+        }
+        "mysql" => {
+            builder = builder.dialect(MySqlDialect).grammar(
+                include_str!("../../../grammars/mysql/MySQLLexer.g4"),
+                include_str!("../../../grammars/mysql/MySQLParser.g4"),
             );
         }
         "generic" => {
@@ -371,10 +493,7 @@ pub unsafe extern "C" fn barkus_sql_compile(
         }
     };
 
-    Box::into_raw(Box::new(SqlHandle {
-        gen,
-        rng: make_rng(seed),
-    }))
+    Box::into_raw(Box::new(SqlHandle { gen, rng: make_rng(seed) }))
 }
 
 /// Generate one SQL string.
@@ -454,7 +573,7 @@ pub unsafe extern "C" fn barkus_sql_decode(
     output_buf: *mut u8,
     output_len: *mut usize,
 ) -> i32 {
-    let h = match handle.as_ref() {
+    let h = match handle.as_mut() {
         Some(h) => h,
         None => {
             set_last_error("sql decode error: null handle");
