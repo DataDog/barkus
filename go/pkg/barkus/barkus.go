@@ -12,12 +12,12 @@ extern void* barkus_compile(const uint8_t *source, size_t source_len,
 extern void* barkus_compile_with_config(const uint8_t *source, size_t source_len,
                             const uint8_t *config_json, size_t config_json_len,
                             uint64_t seed);
-extern int barkus_generate(void *handle,
+extern int barkus_generate(const void *handle,
                            uint8_t *output_buf, size_t *output_len);
-extern int barkus_generate_with_tape(void *handle,
+extern int barkus_generate_with_tape(const void *handle,
                            uint8_t *output_buf, size_t *output_len,
                            uint8_t *tape_buf, size_t *tape_len);
-extern int barkus_decode(void *handle,
+extern int barkus_decode(const void *handle,
                          const uint8_t *tape_ptr, size_t tape_len,
                          uint8_t *output_buf, size_t *output_len);
 extern void barkus_destroy(void *handle);
@@ -77,6 +77,14 @@ func buildGrammarConfigJSON(cfg *grammarConfig) ([]byte, error) {
 }
 
 // Generator compiles a grammar and generates samples from it.
+//
+// Concurrency: a Generator is safe to share across goroutines.
+//   - Decode is wait-free across any number of concurrent callers (decoding
+//     is purely tape-driven and never consults the RNG).
+//   - Generate / GenerateWithTape serialize on an internal RNG mutex, so
+//     concurrent callers see correct output but throughput is bounded by
+//     a single RNG. Use one Generator per goroutine if you need parallel
+//     Generate.
 type Generator struct {
 	handle unsafe.Pointer
 }
@@ -255,9 +263,14 @@ func DecodeWithOptions(source string, tape []byte, opts ...GrammarOption) ([]byt
 	return decodeWithHandle(handle, tape)
 }
 
-// Decode replays a tape into buf, returning the written sub-slice.
-// Not safe for concurrent calls on a single Generator, the underlying
-// handle owns mutable state. Use one Generator per goroutine.
+// Decode replays a decision tape using this Generator's compiled grammar
+// and profile, writing into the caller's buf. Returns the sub-slice of
+// buf that was written.
+//
+// Concurrency: safe to call from any number of goroutines on the same
+// Generator. The underlying barkus_decode FFI takes a const handle and
+// touches no mutable state, so no synchronization is needed at this
+// level.
 func (g *Generator) Decode(tape, buf []byte) ([]byte, error) {
 	if g.handle == nil {
 		return nil, errors.New("barkus: generator is closed")

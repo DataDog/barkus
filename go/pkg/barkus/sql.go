@@ -7,12 +7,12 @@ package barkus
 extern void* barkus_sql_compile(const uint8_t *dialect, size_t dialect_len,
                                 const uint8_t *config_json, size_t config_json_len,
                                 uint64_t seed);
-extern int barkus_sql_generate(void *handle,
+extern int barkus_sql_generate(const void *handle,
                                uint8_t *output_buf, size_t *output_len);
-extern int barkus_sql_generate_with_tape(void *handle,
+extern int barkus_sql_generate_with_tape(const void *handle,
                                uint8_t *output_buf, size_t *output_len,
                                uint8_t *tape_buf, size_t *tape_len);
-extern int barkus_sql_decode(void *handle,
+extern int barkus_sql_decode(const void *handle,
                              const uint8_t *tape_ptr, size_t tape_len,
                              uint8_t *output_buf, size_t *output_len);
 extern void barkus_sql_destroy(void *handle);
