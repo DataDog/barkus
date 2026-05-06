@@ -35,6 +35,7 @@ const (
 	SQLite     Dialect = "sqlite"
 	Trino      Dialect = "trino"
 	Generic    Dialect = "generic"
+	MySQL      Dialect = "mysql"
 )
 
 // SqlType represents a column data type.
@@ -76,46 +77,25 @@ const (
 	Havoc     ValidityMode = "Havoc"
 )
 
-// SQLOption configures a SQLGenerator.
-type SQLOption func(*sqlConfig)
-
 type sqlConfig struct {
-	schema        *Schema
-	schemaJSON    *string
-	seed          uint64
-	maxDepth      *uint32
-	maxTotalNodes *uint32
-	validityMode  *ValidityMode
+	commonConfig
+	schema     *Schema
+	schemaJSON *string
 }
+
+// sqlOption is the SQLOption adapter for SQL-only setters.
+type sqlOption func(*sqlConfig)
+
+func (o sqlOption) applySQL(c *sqlConfig) { o(c) }
 
 // WithSchema sets the database schema for context-aware generation.
 func WithSchema(s Schema) SQLOption {
-	return func(c *sqlConfig) { c.schema = &s }
+	return sqlOption(func(c *sqlConfig) { c.schema = &s })
 }
 
 // WithSchemaJSON sets the schema from a raw JSON string.
 func WithSchemaJSON(j string) SQLOption {
-	return func(c *sqlConfig) { c.schemaJSON = &j }
-}
-
-// WithSeed sets the RNG seed for deterministic generation. 0 means random.
-func WithSeed(seed uint64) SQLOption {
-	return func(c *sqlConfig) { c.seed = seed }
-}
-
-// WithMaxDepth sets the maximum derivation depth.
-func WithMaxDepth(depth uint32) SQLOption {
-	return func(c *sqlConfig) { c.maxDepth = &depth }
-}
-
-// WithMaxTotalNodes sets the maximum number of AST nodes.
-func WithMaxTotalNodes(n uint32) SQLOption {
-	return func(c *sqlConfig) { c.maxTotalNodes = &n }
-}
-
-// WithValidityMode sets the validity mode.
-func WithValidityMode(mode ValidityMode) SQLOption {
-	return func(c *sqlConfig) { c.validityMode = &mode }
+	return sqlOption(func(c *sqlConfig) { c.schemaJSON = &j })
 }
 
 // SQLGenerator generates SQL strings using a compiled grammar and schema.
@@ -127,7 +107,7 @@ type SQLGenerator struct {
 func NewSQLGenerator(dialect Dialect, opts ...SQLOption) (*SQLGenerator, error) {
 	var cfg sqlConfig
 	for _, o := range opts {
-		o(&cfg)
+		o.applySQL(&cfg)
 	}
 
 	// Build config JSON blob.
