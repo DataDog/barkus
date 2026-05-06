@@ -1,29 +1,21 @@
 package barkus
 
-// Option configures any generator. Anything that satisfies both
-// SQLOption and GrammarOption can be passed to NewSQLGenerator,
-// NewGeneratorWithOptions, or DecodeWithOptions.
+// Option works on any generator (SQL, any grammar).
 type Option interface {
 	SQLOption
 	GrammarOption
 }
 
-// SQLOption configures a SQLGenerator. Use the shared With* helpers
-// (WithSeed, WithValidityMode, WithMaxDepth, WithMaxTotalNodes) or
-// the SQL-only WithSchema / WithSchemaJSON.
+// SQLOption configures a SQLGenerator.
 type SQLOption interface {
 	applySQL(*sqlConfig)
 }
 
-// GrammarOption configures a Generator built from a grammar source —
-// EBNF, ANTLR, or PEG, selected via WithFormat. Use the shared With*
-// helpers or the grammar-only WithFormat.
+// GrammarOption configures a Generator built from grammar source.
 type GrammarOption interface {
 	applyGrammar(*grammarConfig)
 }
 
-// commonConfig holds fields shared by sqlConfig and grammarConfig. Both
-// configs embed it so the same setters work on either.
 type commonConfig struct {
 	seed          uint64
 	validityMode  *ValidityMode
@@ -31,7 +23,6 @@ type commonConfig struct {
 	maxTotalNodes *uint32
 }
 
-// commonOption is an Option that only touches commonConfig fields.
 type commonOption func(*commonConfig)
 
 func (o commonOption) applySQL(c *sqlConfig)         { o(&c.commonConfig) }

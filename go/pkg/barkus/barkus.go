@@ -32,12 +32,6 @@ import (
 	"unsafe"
 )
 
-// GrammarFormat picks which compiler the FFI runs on the source string.
-//   - GrammarEbnf is barkus's native EBNF dialect.
-//   - GrammarAntlr accepts a combined ANTLR4 grammar (single .g4) like
-//     antlr/grammars-v4's json/JSON.g4. Split-style ANTLR (separate
-//     Lexer.g4 + Parser.g4) goes through NewSQLGenerator instead.
-//   - GrammarPeg accepts a PEG grammar (see fixtures/grammars/*.peg).
 type GrammarFormat string
 
 const (
@@ -51,21 +45,17 @@ type grammarConfig struct {
 	format *GrammarFormat
 }
 
-// grammarOption is the GrammarOption adapter for format-specific setters.
 type grammarOption func(*grammarConfig)
 
 func (o grammarOption) applyGrammar(c *grammarConfig) { o(c) }
 
-// WithFormat selects the compiler used on the source string.
-// Default is GrammarEbnf. Use GrammarAntlr for a combined .g4 file or
-// GrammarPeg for a PEG grammar.
+// WithFormat selects the grammar source format. Default is GrammarEbnf.
 func WithFormat(f GrammarFormat) GrammarOption {
 	return grammarOption(func(c *grammarConfig) { c.format = &f })
 }
 
-// grammarConfigJSON is the wire shape consumed by the Rust FFI's
-// GrammarConfig. Field names must match exactly (serde rename will not
-// save you here).
+// Wire shape consumed by Rust's GrammarConfig — field names must match.
+// It's JSON serializable so it can be passed as a string through the FFI.
 type grammarConfigJSON struct {
 	MaxDepth      *uint32        `json:"max_depth,omitempty"`
 	MaxTotalNodes *uint32        `json:"max_total_nodes,omitempty"`
@@ -92,10 +82,8 @@ type Generator struct {
 }
 
 // NewGenerator compiles the given grammar source and returns a Generator.
-// seed controls the RNG (0 = random). maxDepth overrides the default
-// derivation depth limit (0 = default of 30).
-//
-// For ValidityMode control use NewGeneratorWithOptions.
+// seed controls the RNG (0 = random); maxDepth = 0 uses the default (30).
+// For ValidityMode or grammar format control, use NewGeneratorWithOptions.
 func NewGenerator(source string, seed uint64, maxDepth uint32) (*Generator, error) {
 	src := []byte(source)
 	var srcPtr *C.uint8_t
@@ -115,9 +103,7 @@ func NewGenerator(source string, seed uint64, maxDepth uint32) (*Generator, erro
 	return g, nil
 }
 
-// NewGeneratorWithOptions compiles the given grammar with full profile
-// control. Mirrors NewSQLGenerator's option pattern. Pass WithValidityMode,
-// WithSeed, WithMaxDepth, WithMaxTotalNodes, or WithFormat as needed.
+// NewGeneratorWithOptions compiles a grammar with the given options.
 func NewGeneratorWithOptions(source string, opts ...GrammarOption) (*Generator, error) {
 	var cfg grammarConfig
 	for _, o := range opts {
@@ -206,7 +192,7 @@ func (g *Generator) GenerateWithTape(buf, tapeBuf []byte) (output, tape []byte, 
 	return buf[:outputLen], tapeBuf[:tapeLen], nil
 }
 
-// Decode replays a decision tape against the given EBNF grammar.
+// Decode replays a decision tape against the given grammar.
 //
 // Stateless: compiles the grammar, decodes, and frees the handle on every
 // call. Suitable for one-shot scripts; for hot loops (fuzz harnesses, RPC
@@ -231,12 +217,8 @@ func Decode(source string, tape []byte, maxDepth uint32) ([]byte, error) {
 	return decodeWithHandle(handle, tape)
 }
 
-// DecodeWithOptions is the option-bearing variant of Decode: pass
-// WithValidityMode + WithMaxDepth etc. to control the profile used
-// during the (compile + decode) round-trip.
-//
-// Stateless: same compile-per-call cost as Decode. Hot-loop callers
-// should prefer NewGeneratorWithOptions + (*Generator).Decode.
+// DecodeWithOptions is Decode with options. Same compile-per-call cost —
+// hot-loop callers should reuse a Generator via (*Generator).Decode.
 func DecodeWithOptions(source string, tape []byte, opts ...GrammarOption) ([]byte, error) {
 	var cfg grammarConfig
 	for _, o := range opts {
@@ -273,14 +255,9 @@ func DecodeWithOptions(source string, tape []byte, opts ...GrammarOption) ([]byt
 	return decodeWithHandle(handle, tape)
 }
 
-// Decode replays a decision tape using this Generator's compiled grammar
-// and profile, writing into the caller's buf. Returns the sub-slice of
-// buf that was written.
-//
-// Hot-path safe: no compile happens here, the call goes straight to
-// barkus_decode. Not safe for concurrent calls on a single Generator
-// (the underlying handle owns mutable state); use one Generator per
-// goroutine, e.g. via sync.Pool.
+// Decode replays a tape into buf, returning the written sub-slice.
+// Not safe for concurrent calls on a single Generator, the underlying
+// handle owns mutable state. Use one Generator per goroutine.
 func (g *Generator) Decode(tape, buf []byte) ([]byte, error) {
 	if g.handle == nil {
 		return nil, errors.New("barkus: generator is closed")

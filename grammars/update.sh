@@ -35,18 +35,16 @@ strip_predicates() {
     # commit. The post-fetch removed-count assertion fires loudly if a
     # future commit introduces nested braces, so we don't silently ship
     # un-stripped predicates.
-    python3 - <<PY
-import re, sys
-src = open("${file}").read()
-new = re.sub(r"\{\s*this\.[^}]*\}\s*\?", "", src)
-open("${file}", "w").write(new)
-removed = (src.count("{this.") + src.count("{ this.")
-        -  new.count("{this.") - new.count("{ this."))
-if removed == 0:
-    sys.exit(f"strip_predicates: no predicates removed from ${file}; "
-             f"grammar may have changed shape upstream — re-check the regex")
-print(f"  stripped {removed} predicate(s) from ${file}")
-PY
+    local before after removed
+    before=$(grep -oE '\{[[:space:]]*this\.' "${file}" | wc -l || true)
+    perl -i -0777 -pe 's/\{\s*this\.[^}]*\}\s*\?//g' "${file}"
+    after=$(grep -oE '\{[[:space:]]*this\.' "${file}" | wc -l || true)
+    removed=$((before - after))
+    if [[ "${removed}" -eq 0 ]]; then
+        echo "strip_predicates: no predicates removed from ${file}; grammar may have changed shape upstream — re-check the regex" >&2
+        exit 1
+    fi
+    echo "  stripped ${removed} predicate(s) from ${file}"
 }
 
 echo "Fetching grammars at commit ${COMMIT:0:12}..."

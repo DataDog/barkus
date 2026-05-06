@@ -83,7 +83,6 @@ type sqlConfig struct {
 	schemaJSON *string
 }
 
-// sqlOption is the SQLOption adapter for SQL-only setters.
 type sqlOption func(*sqlConfig)
 
 func (o sqlOption) applySQL(c *sqlConfig) { o(c) }

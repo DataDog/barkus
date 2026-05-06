@@ -153,10 +153,6 @@ func TestDecodeInvalidTape(t *testing.T) {
 	}
 }
 
-// Cross-format smoke: WithFormat lets the same NewGeneratorWithOptions
-// constructor consume EBNF, ANTLR, and PEG grammars. This exercises the
-// format-agnostic option machinery — a regression here means GrammarOption
-// is once again coupled to a single format.
 func TestGrammarFormats(t *testing.T) {
 	cases := []struct {
 		name   string

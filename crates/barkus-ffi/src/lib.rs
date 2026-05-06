@@ -115,14 +115,6 @@ pub unsafe extern "C" fn barkus_compile(
     Box::into_raw(handle)
 }
 
-/// Grammar source format. `Ebnf` is the historical default — barkus's own
-/// EBNF dialect, used by every fixture under fixtures/grammars/. `Antlr`
-/// passes the source through `barkus_antlr::compile` so callers can drop
-/// in a combined ANTLR4 grammar (single `.g4`) like grammars-v4's
-/// json/JSON.g4 directly. `Peg` accepts a PEG grammar (see
-/// fixtures/grammars/*.peg) via `barkus_peg::compile`. Split-style ANTLR
-/// (separate Lexer.g4 + Parser.g4) goes through `barkus_sql_compile` and
-/// is not selectable here.
 #[derive(serde::Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 enum GrammarFormat {
@@ -132,16 +124,11 @@ enum GrammarFormat {
     Peg,
 }
 
-/// JSON config blob accepted by `barkus_compile_with_config`. Mirrors the
-/// shape of `SqlConfig` but without the SQL-specific schema field. Optional
-/// fields fall through to `Profile::builder()` defaults when absent.
 #[derive(serde::Deserialize, Default)]
 struct GrammarConfig {
     max_depth: Option<u32>,
     max_total_nodes: Option<u32>,
     validity_mode: Option<barkus_core::profile::ValidityMode>,
-    /// Grammar format selector. Defaults to `Ebnf` for backwards
-    /// compatibility with `barkus_compile`.
     #[serde(default)]
     format: GrammarFormat,
 }
@@ -169,7 +156,6 @@ where
     }
 }
 
-/// Apply the three Profile fields shared by both EbnfConfig and SqlConfig.
 fn apply_profile_overrides(
     mut b: barkus_core::profile::ProfileBuilder,
     max_depth: Option<u32>,
@@ -188,13 +174,8 @@ fn apply_profile_overrides(
     b
 }
 
-/// Compile an EBNF grammar with full profile control.
-///
-/// Like `barkus_compile`, but accepts a JSON config blob with `validity_mode`,
-/// `max_depth`, `max_total_nodes` so callers can pick Strict / NearValid /
-/// Havoc at compile time. Pass null / 0 for `config_json` / `config_json_len`
-/// to use defaults (equivalent to `barkus_compile`).
-///
+/// Compile a grammar with a JSON config blob (`validity_mode`, `max_depth`,
+/// `max_total_nodes`, `format`). Pass null/0 for the config to use defaults.
 /// Returns null on error (call `barkus_last_error` for details).
 ///
 /// # Safety
