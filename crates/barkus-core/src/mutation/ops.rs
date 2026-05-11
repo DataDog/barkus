@@ -8,6 +8,7 @@ use rand::{Rng, RngExt};
 use crate::generate::generate_from;
 use crate::ir::grammar::GrammarIr;
 use crate::profile::Profile;
+use crate::tape::encode_residue_byte;
 use crate::tape::map::ModifierByte;
 
 use super::fragment_db::FragmentDb;
@@ -207,9 +208,8 @@ pub fn perturb_repetition(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl R
         return false;
     }
 
-    let offset = new_count - min;
-    let base = current_byte.wrapping_sub(current_byte % range as u8);
-    tape[tape_offset] = base.wrapping_add(offset as u8);
+    let offset = (new_count - min) as usize;
+    tape[tape_offset] = encode_residue_byte(offset, range as usize, rng);
     true
 }
 

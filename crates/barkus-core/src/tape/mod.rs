@@ -110,16 +110,11 @@ impl TapeWriter {
         if n <= 1 {
             return;
         }
-        // When n >= 256, every byte value is a distinct choice — just push directly.
         if n >= 256 {
             self.bytes.push(chosen as u8);
             return;
         }
-        // Pick a random byte that maps to `chosen` via `byte % n`.
-        // Use wrapping arithmetic to avoid overflow when the result would exceed 255.
-        let base = rng.random_range(0u8..=255);
-        let byte = base.wrapping_sub(base % n as u8).wrapping_add(chosen as u8);
-        self.bytes.push(byte);
+        self.bytes.push(encode_residue_byte(chosen, n, rng));
     }
 
     /// Write a repetition decision. Encodes `count` such that `count == min + byte % range`.
@@ -127,13 +122,9 @@ impl TapeWriter {
         if min >= max {
             return;
         }
-        let range = max - min + 1;
-        let offset = count - min;
-        let base = rng.random_range(0u8..=255);
-        let byte = base
-            .wrapping_sub(base % range as u8)
-            .wrapping_add(offset as u8);
-        self.bytes.push(byte);
+        let range = (max - min + 1) as usize;
+        let offset = (count - min) as usize;
+        self.bytes.push(encode_residue_byte(offset, range, rng));
     }
 
     /// Current offset (for TapeMap).
@@ -144,4 +135,17 @@ impl TapeWriter {
     pub fn finish(self) -> DecisionTape {
         DecisionTape { bytes: self.bytes }
     }
+}
+
+/// Sample a byte `b ∈ [0, 256)` uniformly among those with `b % n == chosen`.
+///
+/// Requires `2 ≤ n ≤ 256` and `chosen < n`. u16 arithmetic so values of
+/// `n` that don't divide 256 don't wrap chosen onto a neighbouring residue.
+pub(crate) fn encode_residue_byte(chosen: usize, n: usize, rng: &mut impl Rng) -> u8 {
+    debug_assert!((2..=256).contains(&n) && chosen < n);
+    let n = n as u16;
+    let chosen = chosen as u16;
+    let count = 256u16 / n + u16::from(chosen < 256u16 % n);
+    let k = rng.random_range(0..count);
+    (chosen + n * k) as u8
 }

@@ -484,3 +484,292 @@ fn budget_max_total_nodes_enforced() {
         })
     ));
 }
+
+// ── Weighted alternative selection (W1) ──
+
+fn weighted_alt(sym: SymbolId, weight: f32) -> Alternative {
+    Alternative {
+        symbols: vec![SymbolRef {
+            symbol: sym,
+            modifier: Modifier::Once,
+        }],
+        weight,
+        semantic_tag: None,
+    }
+}
+
+fn two_alt_grammar(weights: [f32; 2]) -> GrammarIr {
+    let mut symbols = Vec::new();
+    let a = lit_sym(&mut symbols, b"a");
+    let b = lit_sym(&mut symbols, b"b");
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![weighted_alt(a, weights[0]), weighted_alt(b, weights[1])],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+    ir
+}
+
+fn run_alts(ir: &GrammarIr, profile: &Profile, n: usize) -> (usize, usize) {
+    let mut a = 0usize;
+    let mut b = 0usize;
+    for seed in 0..n as u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast, _, _) = generate(ir, profile, &mut rng).unwrap();
+        match ast.serialize().as_slice() {
+            b"a" => a += 1,
+            b"b" => b += 1,
+            other => panic!("unexpected output {other:?}"),
+        }
+    }
+    (a, b)
+}
+
+/// Equal weights match the prior uniform behaviour within statistical
+/// tolerance. This guards against regressing the unweighted case.
+#[test]
+fn weighted_equal_is_uniform() {
+    let ir = two_alt_grammar([1.0, 1.0]);
+    let profile = Profile::default();
+    let (a, b) = run_alts(&ir, &profile, 2000);
+    assert!((a as i64 - b as i64).abs() < 200, "skew: a={a}, b={b}");
+}
+
+/// 3:1 weights converge to ~75/25 within tolerance.
+#[test]
+fn weighted_three_to_one_ratio() {
+    let ir = two_alt_grammar([3.0, 1.0]);
+    let profile = Profile::default();
+    let n = 4000;
+    let (a, b) = run_alts(&ir, &profile, n);
+    // Expect a ≈ 0.75 * n = 3000. Tolerate ±150 (~5%).
+    assert!(a > 2850 && a < 3150, "a={a}, b={b}");
+    assert!(b > 850 && b < 1150, "a={a}, b={b}");
+}
+
+/// Zero-weight alternatives are never chosen as long as some alternative
+/// has positive weight.
+#[test]
+fn weighted_zero_excludes_alternative() {
+    let mut symbols = Vec::new();
+    let a = lit_sym(&mut symbols, b"a");
+    let b = lit_sym(&mut symbols, b"b");
+    let c = lit_sym(&mut symbols, b"c");
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![
+                weighted_alt(a, 1.0),
+                weighted_alt(b, 0.0),
+                weighted_alt(c, 1.0),
+            ],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+    let profile = Profile::default();
+    for seed in 0..1000u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast, _, _) = generate(&ir, &profile, &mut rng).unwrap();
+        let out = ast.serialize();
+        assert_ne!(out, b"b", "zero-weight alternative selected at seed {seed}");
+        assert!(out == b"a" || out == b"c", "unexpected: {out:?}");
+    }
+}
+
+/// All-zero weights fall back to uniform — does not panic, both alternatives
+/// are eventually selected. Total decoder property: degenerate weights
+/// must not break generation.
+#[test]
+fn weighted_all_zero_fallback() {
+    let ir = two_alt_grammar([0.0, 0.0]);
+    let profile = Profile::default();
+    let (a, b) = run_alts(&ir, &profile, 2000);
+    assert!(a > 100, "fallback never picked 'a': a={a}, b={b}");
+    assert!(b > 100, "fallback never picked 'b': a={a}, b={b}");
+}
+
+/// Negative weights are clamped to zero; remaining positive weights
+/// determine the distribution.
+#[test]
+fn weighted_negative_clamped() {
+    let ir = two_alt_grammar([-1.0, 1.0]);
+    let profile = Profile::default();
+    for seed in 0..200u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast, _, _) = generate(&ir, &profile, &mut rng).unwrap();
+        assert_eq!(ast.serialize(), b"b");
+    }
+}
+
+/// Round-trip: a tape produced by weighted generation decodes back to the
+/// same AST. The decode path is unchanged — this verifies the encoding
+/// invariant `byte % n_alts == chosen` still holds.
+#[test]
+fn weighted_round_trip_preserved() {
+    let ir = two_alt_grammar([3.0, 1.0]);
+    let profile = Profile::default();
+    for seed in 0..200u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast_gen, tape, _) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast_dec, _) = decode(&ir, &profile, &tape.bytes).unwrap();
+        assert_eq!(
+            ast_gen.serialize(),
+            ast_dec.serialize(),
+            "round-trip mismatch at seed {seed}"
+        );
+    }
+}
+
+/// Token-pool alternative weights are honoured. Same shape as the
+/// production-alternative test but driven through `TerminalKind::TokenPool`.
+#[test]
+fn weighted_token_pool_ratio() {
+    use barkus_core::ir::ids::PoolId;
+
+    let mut symbols = Vec::new();
+    let pool_term = SymbolId(symbols.len() as u32);
+    symbols.push(Symbol::Terminal(TerminalKind::TokenPool(PoolId(0))));
+
+    // Pool literals 'x' and 'y' need their own symbol ids.
+    let mut pool_symbols = symbols.clone();
+    let x = lit_sym(&mut pool_symbols, b"x");
+    let y = lit_sym(&mut pool_symbols, b"y");
+
+    let pool = TokenPoolEntry {
+        name: "P".into(),
+        alternatives: vec![weighted_alt(x, 3.0), weighted_alt(y, 1.0)],
+    };
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![simple_alt(pool_term)],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols: pool_symbols,
+        start: ProductionId(0),
+        token_pools: vec![pool],
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::default();
+    let n = 4000;
+    let mut x_count = 0usize;
+    let mut y_count = 0usize;
+    for seed in 0..n as u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast, _, _) = generate(&ir, &profile, &mut rng).unwrap();
+        match ast.serialize().as_slice() {
+            b"x" => x_count += 1,
+            b"y" => y_count += 1,
+            other => panic!("unexpected output {other:?}"),
+        }
+    }
+    // Expect x ≈ 0.75 * n = 3000. Tolerate ±200.
+    assert!(x_count > 2800 && x_count < 3200, "x={x_count}, y={y_count}");
+}
+
+/// Zero-weight alternatives in a token pool must never be selected,
+/// including when `n_alts` does not divide 256 evenly — the byte-to-alt
+/// encoding has to be unbiased across every residue class.
+#[test]
+fn weighted_token_pool_zero_weight_with_three_alts() {
+    use barkus_core::ir::ids::PoolId;
+
+    let mut symbols = Vec::new();
+    let pool_term = SymbolId(symbols.len() as u32);
+    symbols.push(Symbol::Terminal(TerminalKind::TokenPool(PoolId(0))));
+
+    let mut pool_symbols = symbols.clone();
+    let x = lit_sym(&mut pool_symbols, b"x");
+    let y = lit_sym(&mut pool_symbols, b"y");
+    let z = lit_sym(&mut pool_symbols, b"z");
+
+    let pool = TokenPoolEntry {
+        name: "P".into(),
+        alternatives: vec![
+            weighted_alt(x, 1.0),
+            weighted_alt(y, 0.0),
+            weighted_alt(z, 1.0),
+        ],
+    };
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![simple_alt(pool_term)],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols: pool_symbols,
+        start: ProductionId(0),
+        token_pools: vec![pool],
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::default();
+    let mut zero_hits = 0usize;
+    for seed in 0..20_000u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast, _, _) = generate(&ir, &profile, &mut rng).unwrap();
+        if ast.serialize().as_slice() == b"y" {
+            zero_hits += 1;
+        }
+    }
+    assert_eq!(
+        zero_hits, 0,
+        "zero-weight token-pool alternative was selected {zero_hits} times"
+    );
+}
+
+/// For any `n_alts` in `2..=256`, the alternative selected during
+/// generation must equal the one decoded back from the tape — including
+/// values where `256 % n_alts != 0`.
+#[test]
+fn roundtrip_preserved_for_non_power_of_two_alts() {
+    for n in [3usize, 5, 6, 7] {
+        let mut symbols = Vec::new();
+        let lits: Vec<SymbolId> = (0..n)
+            .map(|i| lit_sym(&mut symbols, &[b'a' + i as u8]))
+            .collect();
+        let alts: Vec<Alternative> = lits.iter().map(|&s| simple_alt(s)).collect();
+
+        let mut ir = GrammarIr {
+            productions: vec![Production {
+                id: ProductionId(0),
+                name: "S".into(),
+                alternatives: alts,
+                attrs: ProductionAttrs::default(),
+            }],
+            symbols,
+            start: ProductionId(0),
+            token_pools: Vec::new(),
+        };
+        compute_min_depths(&mut ir);
+
+        let profile = Profile::default();
+        for seed in 0..5_000u64 {
+            let mut rng = SmallRng::seed_from_u64(seed);
+            let (ast_gen, tape, _) = generate(&ir, &profile, &mut rng).unwrap();
+            let (ast_dec, _) = decode(&ir, &profile, &tape.bytes).unwrap();
+            assert_eq!(
+                ast_gen.serialize(),
+                ast_dec.serialize(),
+                "round-trip mismatch at n={n}, seed={seed}"
+            );
+        }
+    }
+}

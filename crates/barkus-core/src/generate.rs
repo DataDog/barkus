@@ -1,3 +1,5 @@
+use rand::distr::weighted::WeightedIndex;
+use rand::distr::Distribution;
 use rand::{Rng, RngExt};
 
 use crate::ast::{Ast, AstNodeKind};
@@ -7,7 +9,29 @@ use crate::ir::grammar::{GrammarIr, Modifier, Symbol, TerminalKind};
 use crate::ir::ids::{NodeId, ProductionId, SymbolId};
 use crate::profile::Profile;
 use crate::tape::map::TapeMap;
-use crate::tape::{DecisionTape, TapeReader, TapeWriter};
+use crate::tape::{encode_residue_byte, DecisionTape, TapeReader, TapeWriter};
+
+/// Pick an alternative index proportional to per-alternative `weight`.
+///
+/// Negative weights are clamped to 0. Falls back to uniform when every
+/// weight is zero or `WeightedIndex::new` rejects the input.
+fn pick_weighted<I, R>(weights: I, rng: &mut R) -> usize
+where
+    I: IntoIterator<Item = f32>,
+    I::IntoIter: ExactSizeIterator,
+    R: Rng,
+{
+    let iter = weights.into_iter();
+    let n = iter.len();
+    if n <= 1 {
+        return 0;
+    }
+    let clamped = iter.map(|w| w.max(0.0));
+    match WeightedIndex::new(clamped) {
+        Ok(dist) => dist.sample(rng),
+        Err(_) => rng.random_range(0..n),
+    }
+}
 
 // ── Public API (no hooks, backwards-compatible) ──
 
@@ -185,11 +209,14 @@ fn expand_production_gen<H: SemanticHooks>(
     let tape_start = writer.offset();
 
     let alt_idx = if eligible_buf.is_empty() {
-        let chosen = rng.random_range(0..n_alts);
+        let chosen = pick_weighted(prod.alternatives.iter().map(|a| a.weight), rng);
         writer.write_choice(chosen, n_alts, rng);
         chosen
     } else {
-        let chosen_eligible = rng.random_range(0..eligible_buf.len());
+        let chosen_eligible = pick_weighted(
+            eligible_buf.iter().map(|&i| prod.alternatives[i].weight),
+            rng,
+        );
         let alt_idx = eligible_buf[chosen_eligible];
         writer.write_choice(alt_idx, n_alts, rng);
         alt_idx
@@ -387,8 +414,26 @@ fn emit_terminal_gen<H: SemanticHooks>(
             vec![*lo + idx as u8]
         }
         TerminalKind::TokenPool(pool_id) => {
-            // Consume a tape byte for the pool decision.
-            let tape_byte = rng.random::<u8>();
+            // Pick a tape byte whose `% n_alts` selects an alternative
+            // weighted by `Alternative.weight`. Hook still sees a real u8.
+            let pool_idx = pool_id.0 as usize;
+            let n_alts = grammar
+                .token_pools
+                .get(pool_idx)
+                .map_or(0, |p| p.alternatives.len());
+
+            let tape_byte = if (2..=256).contains(&n_alts) {
+                let chosen_alt = pick_weighted(
+                    grammar.token_pools[pool_idx]
+                        .alternatives
+                        .iter()
+                        .map(|a| a.weight),
+                    rng,
+                );
+                encode_residue_byte(chosen_alt, n_alts, rng)
+            } else {
+                rng.random::<u8>()
+            };
             writer.write_choice(tape_byte as usize, 256, rng);
 
             // Ask the hook first.
