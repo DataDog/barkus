@@ -1,0 +1,6 @@
+# Use the git CLI for fetching, so GIT_CONFIG_GLOBAL=/dev/null in build.sh
+# applies to dep fetches (otherwise cargo's libgit2 backend reads ~/.gitconfig
+# and inherits the host's https→ssh insteadOf rule, breaking unauthenticated
+# fetches of pinned SHAs).
+[net]
+git-fetch-with-cli = true

@@ -1,0 +1,4 @@
+repo=https://github.com/go-yaml/yaml.git
+commit=f6f7691b1fdeb513f56608cd2c32c51f8194bf51
+tag=v3.0.1
+go_module=gopkg.in/yaml.v3

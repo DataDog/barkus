@@ -19,6 +19,10 @@ same upstream sources.
 | `trino/TrinoParser.g4`          | `sql/trino/TrinoParser.g4`       | Apache 2.0 | |
 | `mysql/MySQLLexer.g4`           | `sql/mysql/Oracle/MySQLLexer.g4` | BSD-3      | Java semantic predicates stripped at fetch (Oracle variant) |
 | `mysql/MySQLParser.g4`          | `sql/mysql/Oracle/MySQLParser.g4`| BSD-3      | Java semantic predicates stripped at fetch |
+| `html/HTMLLexer.g4`             | `html/HTMLLexer.g4`              | BSD-3      | Split grammar |
+| `html/HTMLParser.g4`            | `html/HTMLParser.g4`             | BSD-3      | Split grammar |
+| `css3/css3Lexer.g4`             | `css3/css3Lexer.g4`              | MIT        | Split grammar |
+| `css3/css3Parser.g4`            | `css3/css3Parser.g4`             | MIT        | Split grammar |
 
 Per-grammar `LICENSE` files are kept alongside the grammars when upstream
 ships one (sqlite/, postgresql/, trino/). MySQL and JSON licenses are

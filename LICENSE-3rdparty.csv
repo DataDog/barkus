@@ -57,7 +57,7 @@
 "leb128fmt","leb128fmt","['MIT OR Apache-2.0']","[]"
 "libc","libc","['MIT OR Apache-2.0']","['The Rust Project Developers']"
 "libdbus-sys","libdbus-sys","[]","[]"
-"libfuzzer-sys","libfuzzer-sys","['(MIT OR Apache-2.0) AND NCSA']","[]"
+"libfuzzer-sys","libfuzzer-sys","['(MIT OR Apache-2.0) AND NCSA']","['The Rust Project Developers']"
 "linux-raw-sys","linux-raw-sys","['Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT']","[]"
 "log","log","['MIT OR Apache-2.0']","['The Rust Project', 'The Rust Project Developers']"
 "memchr","memchr","['Unlicense OR MIT']","['// a', '83', 'Andrew Gallant']"

@@ -1,0 +1,7 @@
+repo=https://github.com/vitessio/vitess.git
+commit=e8d9fa81d351066497a8d99f92e9e9f2ecfd69d0
+tag=v24.0.0
+# Vitess does not use Go's /vN major-version paths; module path is plain
+# vitess.io/vitess regardless of release tag. Resolve by SHA via go get.
+go_module=vitess.io/vitess
+gofuzzheaders_commit=e8a1dd7889d65b8a6f02175e0d79d7c0557db7f9

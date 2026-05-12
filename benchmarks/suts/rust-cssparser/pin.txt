@@ -1,0 +1,6 @@
+repo=https://github.com/servo/rust-cssparser.git
+commit=9339ddd71443463dfb85d1185ad50cd98b34bc8f
+tag=v0.36.0
+rust_nightly=nightly-2026-04-15
+cargo_fuzz=0.12.0
+libfuzzer_sys=0.4.10

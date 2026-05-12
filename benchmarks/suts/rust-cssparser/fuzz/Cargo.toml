@@ -1,0 +1,62 @@
+[package]
+name = "rust-cssparser-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+libfuzzer-sys = "=0.4.10"
+arbitrary = { version = "=1.4.1", features = ["derive"] }
+
+# rust-cssparser pinned by SHA from pin.txt.
+cssparser = { git = "https://github.com/servo/rust-cssparser.git", rev = "9339ddd71443463dfb85d1185ad50cd98b34bc8f" }
+
+# Local barkus crates — direct Rust deps, NOT via FFI, so the harnesses
+# can use Profile::builder().validity_mode(...) to ship three distinct
+# variants
+barkus-core = { path = "../../../../crates/barkus-core" }
+barkus-antlr = { path = "../../../../crates/barkus-antlr" }
+
+[[bin]]
+name = "barkus_strict"
+path = "fuzz_targets/barkus_strict.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "barkus_nearvalid"
+path = "fuzz_targets/barkus_nearvalid.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "barkus_havoc"
+path = "fuzz_targets/barkus_havoc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "arbitrary"
+path = "fuzz_targets/arbitrary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "raw"
+path = "fuzz_targets/raw.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1
