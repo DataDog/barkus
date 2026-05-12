@@ -90,7 +90,7 @@ RUN clang -O2 -Wall -Wextra -Werror \
         /opt/barkus/lib/libbarkus_ffi.a \
         -lpthread -ldl -lm
 
-# --- Versions manifest used by orchestrator's versions.lock generator -------
+# --- Versions manifest --------------------------------------------------------
 RUN { echo "ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7"; \
       rustc --version; \
       /usr/local/go/bin/go version; \
@@ -99,5 +99,23 @@ RUN { echo "ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83f
       ( afl-fuzz -V 2>/dev/null || afl-fuzz 2>&1 | head -1 ) ; \
     } > /opt/barkus/share/versions.lock
 
-WORKDIR /opt/barkus
+# --- Python orchestrator -----------------------------------------------------
+# Hash-pinned install into an isolated venv so SUT layers can't drift the
+# orchestrator's Python deps. The orchestrator code is copied into the
+# source tree below so run.py's `REPO_ROOT = parents[2]` resolves to
+# /src/barkus, matching the host layout.
+COPY benchmarks/orchestrator/requirements.lock /opt/orchestrator/requirements.lock
+RUN python3 -m venv /opt/orchestrator/venv \
+    && /opt/orchestrator/venv/bin/pip install --no-cache-dir --quiet \
+         --require-hashes -r /opt/orchestrator/requirements.lock
+
+COPY benchmarks/orchestrator /src/barkus/benchmarks/orchestrator
+# Convenience launcher: `docker run <img> orchestrator smoke --tier 0`.
+# MPLCONFIGDIR + HOME default to /tmp so a non-root --user mapping
+# (UID with no entry in /etc/passwd) doesn't trip matplotlib / Go cache.
+RUN printf '#!/bin/sh\nexport MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/.mpl}"\nexport HOME="${HOME:-/tmp}"\nexec /opt/orchestrator/venv/bin/python /src/barkus/benchmarks/orchestrator/run.py "$@"\n' \
+      > /usr/local/bin/orchestrator \
+    && chmod +x /usr/local/bin/orchestrator
+
+WORKDIR /src/barkus
 CMD ["/opt/barkus/test-roundtrip"]

@@ -27,23 +27,55 @@ benchmarks/
 
 ## Reproducing a benchmark run
 
-Every external dependency is SHA/version-pinned. Two runs at the same
-git SHA install identical toolchains; only fuzzer PRNG draws differ.
+Every external dependency is SHA/version-pinned. The orchestrator is baked
+into every language image (`barkus-base` lays down a hash-pinned Python
+venv at `/opt/orchestrator/venv` and a launcher at `/usr/local/bin/orchestrator`),
+so the canonical invocation is `docker run <image> orchestrator …`. Running
+the orchestrator from the host is dev-only — it picks up whatever host
+clang/Go/Rust versions you happen to have, which won't match the pinned
+toolchains and produces non-comparable numbers.
 
 ```sh
-# Build the base image.
+# 1. Build the base image (FFI + barkus toolchain + Python orchestrator).
 docker build -f benchmarks/docker/Dockerfile.base -t barkus-base:dev .
 
-# Verify FFI smoke.
+# 2. Build a language-specific image (Go / Rust / C). Each image pre-builds
+#    every SUT harness of its language.
+docker build -f benchmarks/docker/Dockerfile.go-suts   -t barkus-go-suts:dev   .
+docker build -f benchmarks/docker/Dockerfile.rust-suts -t barkus-rust-suts:dev .
+docker build -f benchmarks/docker/Dockerfile.c-suts    -t barkus-c-suts:dev    .
+
+# 3. Verify the FFI links and the orchestrator pipeline (fake engine, ~6 min).
 docker run --rm barkus-base:dev /opt/barkus/test-roundtrip
+docker run --rm \
+    -v "$(pwd)/benchmarks/results:/src/barkus/benchmarks/results" \
+    -v "$(pwd)/benchmarks/reports:/src/barkus/benchmarks/reports" \
+    --user "$(id -u):$(id -g)" \
+    barkus-base:dev orchestrator smoke --tier 0
 
-# Set up orchestrator deps.
-python3 -m venv .venv
-. .venv/bin/activate
-pip install --require-hashes -r benchmarks/orchestrator/requirements.lock
+# 4. Real-engine smoke for one SUT. Pick the image that matches its
+#    language; the orchestrator filters by --sut so you don't fuzz the
+#    others. Replace simdjson-go with vitess / yaml-go / pg_query_go for
+#    the other Go SUTs; rust-cssparser / resvg / html5ever for Rust; or
+#    libxml2 in barkus-c-suts for AFL++.
+docker run --rm \
+    -v "$(pwd)/benchmarks/results:/src/barkus/benchmarks/results" \
+    -v "$(pwd)/benchmarks/reports:/src/barkus/benchmarks/reports" \
+    --user "$(id -u):$(id -g)" \
+    barkus-go-suts:dev orchestrator smoke --tier 1 --sut simdjson-go
 
-# 60-second smoke gate (fake engine self-test).
-python benchmarks/orchestrator/run.py smoke --tier 0
+# 5. Aggregate + render report (any image works — orchestrator + matplotlib
+#    are in barkus-base).
+docker run --rm \
+    -v "$(pwd)/benchmarks/results:/src/barkus/benchmarks/results" \
+    -v "$(pwd)/benchmarks/reports:/src/barkus/benchmarks/reports" \
+    --user "$(id -u):$(id -g)" \
+    barkus-base:dev orchestrator aggregate --run-id <run-id-from-step-4>
+docker run --rm \
+    -v "$(pwd)/benchmarks/results:/src/barkus/benchmarks/results" \
+    -v "$(pwd)/benchmarks/reports:/src/barkus/benchmarks/reports" \
+    --user "$(id -u):$(id -g)" \
+    barkus-base:dev orchestrator report --run-id <run-id-from-step-4>
 ```
 
 ## Regenerating the lockfile

@@ -29,17 +29,15 @@ XML_INCLUDE="$(pkg-config --cflags-only-I libxml-2.0 2>/dev/null || echo -I/usr/
 XML_LIBS="$(pkg-config --libs libxml-2.0 2>/dev/null || echo -lxml2)"
 
 CC="${CC:-clang}"
-case "${CC##*/}" in
-    afl-clang-fast|afl-clang-lto)
-        ENGINE_FLAGS=""   # afl-clang-fast supplies its own instrumentation
-        ;;
-    *)
-        ENGINE_FLAGS="-fsanitize=fuzzer"
-        ;;
-esac
+# Both afl-clang-fast and stock clang accept `-fsanitize=fuzzer` here:
+# - afl-clang-fast intercepts the flag and links libAFLDriver, producing
+#   an AFL++ binary that exposes LLVMFuzzerTestOneInput via afl-fuzz.
+# - clang -fsanitize=fuzzer produces a stock libFuzzer binary.
+# Either way the resulting harness boots and the orchestrator dispatches
+# the correct engine via config.yaml.
+ENGINE_FLAGS="-fsanitize=fuzzer"
 if [[ "${BARKUS_SAN:-0}" == "1" ]]; then
-    ENGINE_FLAGS="${ENGINE_FLAGS},address"
-    ENGINE_FLAGS="${ENGINE_FLAGS#,}"   # strip leading comma if AFL+ASan
+    ENGINE_FLAGS="-fsanitize=fuzzer,address"
 fi
 echo "using CC=${CC}  ENGINE_FLAGS=${ENGINE_FLAGS}"
 

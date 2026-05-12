@@ -6,5 +6,9 @@ fuzz/artifacts/
 benchmarks/results/
 benchmarks/reports/
 benchmarks/versions.lock
+# Per-SUT build artifacts — rebuilt inside the image; don't ship host bytes.
+benchmarks/suts/*/target/
+benchmarks/suts/*/fuzz/target/
+benchmarks/suts/*/harness/harness.test
 **/node_modules/
 **/.DS_Store

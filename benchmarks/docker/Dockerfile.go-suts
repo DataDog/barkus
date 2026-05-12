@@ -20,15 +20,20 @@ ENV GOTOOLCHAIN=local \
     GOFLAGS="-mod=mod" \
     BARKUS_JSON_GRAMMAR=/opt/barkus/share/json.ebnf
 
-# Bring in the SUT harness sources. Each SUT is its own Go module under
-# benchmarks/suts/<id>/harness. The Barkus Go package is loaded via a relative
-# `replace` in each harness's go.mod, so the full Barkus source must be
-# present at /src/barkus (already there from Dockerfile.base's COPY steps).
+# Bring in the Barkus Go package + the SUT harness sources. Each SUT is
+# its own Go module under benchmarks/suts/<id>/harness with a relative
+# `replace github.com/DataDog/barkus => ../../../..`; that resolves to
+# /src/barkus, where we land go.mod + the go/ tree below.
+COPY go.mod /src/barkus/go.mod
+COPY go /src/barkus/go
 COPY benchmarks/suts /src/barkus/benchmarks/suts
 
-# Build each SUT's harness. Idempotent; re-run cheap thanks to GOCACHE.
-WORKDIR /src/barkus/benchmarks/suts/simdjson-go
-RUN bash build.sh
+# Build every Go SUT harness via the shared template in _build-go-sut.sh.
+# Idempotent; subsequent invocations hit GOCACHE.
+RUN set -eux; \
+    for sut in simdjson-go vitess yaml-go pg_query_go; do \
+        bash /src/barkus/benchmarks/suts/${sut}/build.sh; \
+    done
 
 WORKDIR /src/barkus
-CMD ["bash"]
+CMD ["orchestrator", "--help"]

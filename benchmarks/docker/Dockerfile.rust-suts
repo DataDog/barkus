@@ -24,14 +24,17 @@ RUN cargo install cargo-fuzz --version ${CARGO_FUZZ_VERSION} --locked
 # Bring in all SUT sources so build.sh scripts run inside the image.
 COPY benchmarks/suts /src/barkus/benchmarks/suts
 
-# Pre-build each Rust SUT's fuzz harnesses. Each build.sh exports
-# GIT_CONFIG_GLOBAL=/dev/null to defeat any host-level https→ssh insteadOf
-# rule that would break unauthenticated git deps.
-WORKDIR /src/barkus/benchmarks/suts/rust-cssparser
-RUN bash build.sh
-
-WORKDIR /src/barkus/benchmarks/suts/resvg
-RUN bash build.sh
+# Pre-build every Rust SUT's fuzz harnesses via the shared template in
+# _build-rust-sut.sh. Each script exports GIT_CONFIG_GLOBAL=/dev/null so
+# unauthenticated git deps fetch even if the host has an insteadOf rule.
+#
+# resvg is omitted: its fuzz/src/lib.rs `include_str!`s grammars/xml/*.g4
+# files that aren't vendored. Re-add once those XML grammars land in the
+# repo (or the harness switches to an embedded grammar).
+RUN set -eux; \
+    for sut in rust-cssparser html5ever; do \
+        bash /src/barkus/benchmarks/suts/${sut}/build.sh; \
+    done
 
 WORKDIR /src/barkus
-CMD ["bash"]
+CMD ["orchestrator", "--help"]

@@ -481,6 +481,11 @@ def collect_aflpp(
     env["AFL_NO_AFFINITY"] = "1"       # taskset already pins; don't fight it
     env["AFL_AUTORESUME"] = "0"
     env["AFL_SKIP_CPUFREQ"] = "1"      # CI hosts often can't set governor
+    # Skip AFL++'s core_pattern check. Inside the container, /proc is the
+    # host's and is usually piped to systemd-coredump/apport — AFL aborts
+    # otherwise. Acceptable: missing crashes are still surfaced via the
+    # default/crashes/ artifact dir we walk below.
+    env["AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES"] = "1"
     cmd = _maybe_taskset(cpu_pin) + cmd_core
     _ = dict_mode  # afl-clang-fast auto-embeds a dict; no flag to toggle
 

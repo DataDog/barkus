@@ -44,4 +44,4 @@ WORKDIR /src/barkus/benchmarks/suts/libxml2
 RUN CC=afl-clang-fast bash build.sh
 
 WORKDIR /src/barkus
-CMD ["bash"]
+CMD ["orchestrator", "--help"]
