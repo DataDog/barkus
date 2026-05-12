@@ -9,7 +9,6 @@ Relevant keys (one int value per line, `key  : value`):
     execs_done, execs_per_sec, paths_total, edges_found,
     saved_crashes, last_crash, last_hang
 
-Stub for M2; M6 fills in the snapshot reader.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from typing import Optional
 _KV_RE = re.compile(r"^([\w_]+)\s*:\s*(\S+)\s*$")
 
 
-def read_stats(stats_path: Path) -> Optional[dict]:  # pragma: no cover - filled in M6
+def read_stats(stats_path: Path) -> Optional[dict]:  # pragma: no cover
     """Read `fuzzer_stats` and return a normalized sample dict, or None."""
     try:
         text = stats_path.read_text()

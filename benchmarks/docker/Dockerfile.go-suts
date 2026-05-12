@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
-# Go SUT image (milestone M3+). Inherits barkus-base which already pins Go
-# 1.26.1 (`tar -xz` of the upstream tarball at digest pin), AFL++, clang-17,
+# Go SUT image. Inherits barkus-base which already pins Go 1.26.1
+# (`tar -xz` of the upstream tarball at digest pin), AFL++, clang-17,
 # Rust toolchain, and the built libbarkus_ffi.a.
 #
 # This image clones each Go SUT at its pinned commit and pre-builds the

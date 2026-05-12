@@ -4,7 +4,7 @@ Two output artifacts per cell:
   - run.json     : single object capturing pre-registered metadata + final stats
   - samples.jsonl: one JSON object per 10-second sample (time-series)
 
-Aggregate consumers (M7) read both shapes via these models.
+Aggregate consumers read both shapes via these models.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ EngineId = Literal[
     "go-testing-f",   # Go SUTs via `go test -fuzz`
     "libfuzzer",      # Rust SUTs via cargo-fuzz
     "aflpp",          # C/C++ SUTs via AFL++
-    "fake",           # synthetic engine used for orchestrator self-test (M2)
+    "fake",           # synthetic engine used for orchestrator self-test
 ]
 
 DictMode = Literal["on", "off"]

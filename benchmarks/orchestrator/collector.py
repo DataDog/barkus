@@ -1,9 +1,8 @@
 """Cell collector: writes samples.jsonl + run.json for one cell.
 
-M2 wired the `fake` engine for orchestrator self-test. M3 wires
-`go-testing-f` (Go's native testing.F fuzzer) by running a pre-built
-harness binary, parsing its stderr, and sampling at a fixed cadence.
-M5/M6 will add libfuzzer + aflpp using the same shape.
+Supports a `fake` engine for orchestrator self-test, `go-testing-f`
+(Go's native testing.F fuzzer) by running a pre-built harness binary
+and parsing stderr at fixed cadence, and `libfuzzer` via the same shape.
 
 Watchdog: every cell launches the harness in its own process group with
 a daemon thread that SIGKILLs the whole group after duration_s + 30s.
@@ -98,7 +97,7 @@ def collect_fake(
         seed=seed,
         dict_mode=dict_mode,
         engine="fake",
-        engine_version="m2-self-test",
+        engine_version="self-test",
         barkus_sha=barkus_sha,
         sut_sha="",
         grammar_path=None,
@@ -201,8 +200,8 @@ def collect_go_native(
     # persists minimized crash inputs to `testdata/fuzz/<Name>/` relative
     # to its CWD; without this isolation the orchestrator's directory
     # accumulates seed corpus across cells, which a) violates cold-start
-    # and b) replays panics on next run (hit during M4 smoke). Each cell
-    # gets its own testdata tree which is wiped along with corpus.
+    # and b) replays panics on next run. Each cell gets its own testdata
+    # tree which is wiped along with corpus.
     testdata_dir = out_dir / "testdata"
     if testdata_dir.exists():
         shutil.rmtree(testdata_dir)
@@ -237,7 +236,8 @@ def collect_go_native(
             state.update(parsed)
 
         # The fuzzer prints elapsed/execs lines AND any crash banners.
-        # Crash detection is M3-light; M7 does the real dedup pass.
+        # Crash detection here is coarse; aggregate.py runs a content-hash
+        # dedup pass over the saved artifacts.
         if "FAIL" in line or "panic:" in line.lower():
             state["crashes"] = state.get("crashes", 0) + 1
             if first_crash_t_s is None:
@@ -468,9 +468,9 @@ def collect_libfuzzer(
 
 
 def validate_cell(out_dir: Path) -> tuple[bool, str]:
-    """Re-read the artifacts written by collect_fake and validate them.
+    """Re-read the artifacts written by collect_* and validate them.
 
-    Used by `run.py smoke` as the M2 done-when check: artifacts must be
+    Used by `run.py smoke` as the smoke-gate check: artifacts must be
     schema-valid AND the time series must be non-empty + monotonic in execs.
     """
     run_path = out_dir / "run.json"
@@ -502,7 +502,7 @@ def validate_cell(out_dir: Path) -> tuple[bool, str]:
     run = Run.model_validate_json(run_path.read_text())
     # The fake engine deliberately reports zero execs at t=0; for any real
     # engine, at least one sample must have nonzero execs (otherwise the
-    # subprocess silently failed — the M3 raw cell's first run hit this).
+    # subprocess silently failed).
     if run.engine != "fake":
         if not any(s.execs > 0 for s in samples):
             return False, "no sample has execs > 0 — subprocess produced no fuzz output"

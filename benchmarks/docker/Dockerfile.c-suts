@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# C SUT image (milestone M6+). Inherits barkus-base which already pins
-# clang-17, AFL++ v4.21c, and libbarkus_ffi.a.
+# C SUT image. Inherits barkus-base which already pins clang-17,
+# AFL++ v4.21c, and libbarkus_ffi.a.
 #
-# Engine note: M6's host smoke validation uses clang -fsanitize=fuzzer
+# Engine note: host smoke validation uses clang -fsanitize=fuzzer
 # (libFuzzer) because AFL++ v4.21c does not build against host clang-20.
 # Inside this image, clang-17 is available so AFL++ LLVM mode WORKS;
 # this Dockerfile prefers afl-clang-fast and falls back to libFuzzer for
@@ -15,9 +15,9 @@
 
 FROM barkus-base:dev
 
-# libxml2 from source — distro-pinned tag, NOT `apt-get install` (per the
-# plan's bias-control, distro libxml2 versions vary between hosts and
-# would make M9 results non-reproducible).
+# libxml2 from source — distro-pinned tag, NOT `apt-get install` (distro
+# libxml2 versions vary between hosts and would make results non-
+# reproducible).
 ARG LIBXML2_TAG=v2.13.4
 ARG LIBXML2_REPO=https://gitlab.gnome.org/GNOME/libxml2.git
 

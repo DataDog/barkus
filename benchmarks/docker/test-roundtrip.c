@@ -1,8 +1,7 @@
 /*
- * M1 smoke binary — proves the Barkus C-ABI FFI links and runs end-to-end.
+ * FFI smoke binary — proves the Barkus C-ABI FFI links and runs end-to-end.
  *
- * Done-when contract for milestone M1:
- *   `docker run barkus-base /opt/barkus/test-roundtrip` exits 0.
+ * Smoke contract: `docker run barkus-base /opt/barkus/test-roundtrip` exits 0.
  *
  * Reads a JSON EBNF grammar from /opt/barkus/share/json.ebnf, compiles it
  * via barkus_compile, asks barkus_generate to produce one sample, then
@@ -95,7 +94,7 @@ int main(int argc, char **argv) {
     barkus_destroy(h);
 
     fprintf(stdout,
-            "OK barkus M1 round-trip: generate=%zu bytes, decode=%zu bytes\n",
+            "OK barkus FFI round-trip: generate=%zu bytes, decode=%zu bytes\n",
             out_len, dec_len);
     return 0;
 }

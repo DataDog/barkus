@@ -13,7 +13,7 @@ pyyaml==6.0.2
 # typed schema validation for run.json + samples.jsonl
 pydantic==2.10.6
 
-# results aggregation (M7 needs these; pinned now to avoid lockfile churn later)
+# results aggregation
 pandas==2.2.3
 pyarrow==18.1.0
 

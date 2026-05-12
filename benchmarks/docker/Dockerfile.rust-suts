@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# Rust SUT image (milestone M5+). Inherits barkus-base which already pins
-# stable Rust 1.95.0; this image layers a pinned NIGHTLY toolchain and
-# cargo-fuzz on top because libFuzzer requires `-Zsanitizer=fuzzer` (a
-# nightly-only flag).
+# Rust SUT image. Inherits barkus-base which already pins stable Rust
+# 1.95.0; this image layers a pinned NIGHTLY toolchain and cargo-fuzz
+# on top because libFuzzer requires `-Zsanitizer=fuzzer` (a nightly-only
+# flag).
 #
 # Build context: repo root. Invoke via:
 #   docker build -f benchmarks/docker/Dockerfile.rust-suts -t barkus-rust-suts:dev .

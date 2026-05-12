@@ -1,4 +1,4 @@
-"""Synthetic engine used by M2's orchestrator self-test.
+"""Synthetic engine used for the orchestrator self-test.
 
 Emits a deterministic but plausible-looking timeline given a seed and
 elapsed time, so the schema + collector + writer pipeline can be exercised

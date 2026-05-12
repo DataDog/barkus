@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1.7
 #
-# Barkus benchmark base image (milestone M1).
+# Barkus benchmark base image.
 #
 # Build context: repo root (so the COPY steps can reach `crates/`, `Cargo.toml`,
 # `fixtures/`, etc.). Invoke via:
 #
 #   docker build -f benchmarks/docker/Dockerfile.base -t barkus-base:dev .
 #
-# Done-when (M1): `docker run barkus-base:dev /opt/barkus/test-roundtrip` exits 0.
+# Smoke check: `docker run barkus-base:dev /opt/barkus/test-roundtrip` exits 0.
 
 # Ubuntu 22.04 LTS pinned by content digest — never `latest`.
 FROM ubuntu:22.04@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
@@ -82,7 +82,7 @@ RUN cargo build -p barkus-ffi --release \
     && cp fixtures/grammars/json.ebnf /opt/barkus/share/json.ebnf \
     && cp grammars/json/JSON.g4 /opt/barkus/share/JSON.g4
 
-# --- Compile the M1 smoke binary --------------------------------------------
+# --- Compile the FFI smoke binary -------------------------------------------
 COPY benchmarks/docker/test-roundtrip.c /tmp/test-roundtrip.c
 RUN clang -O2 -Wall -Wextra -Werror \
         -I/opt/barkus/include \

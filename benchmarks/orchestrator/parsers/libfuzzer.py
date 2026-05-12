@@ -8,8 +8,6 @@ Sample lines:
 
 Crashes are written as `crash-*` files in the artifact dir; ERROR lines
 indicate one was just minted.
-
-Stub for M2; M5 fills in the pulse/NEW handling.
 """
 
 from __future__ import annotations

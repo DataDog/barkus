@@ -1,7 +1,7 @@
 # Barkus benchmark matrix — single source of truth.
 #
 # Tiers:
-#   0  fake/self-test cells used by M2's smoke check
+#   0  fake/self-test cells used by the smoke check
 #   1  core SUTs (vitess, simdjson-go, cssparser, resvg, libxml2)
 #   2  extended SUTs (yaml-go, pg_query_go, html5ever)
 #
@@ -9,13 +9,13 @@
 #   sum over SUTs of (#variants × #dict_modes × #seeds).
 #
 # Run modes (--tier flag on run.py):
-#   --tier 0     run only fake/self-test cells (M2 smoke gate)
+#   --tier 0     run only fake/self-test cells (smoke gate)
 #   --tier 1     run Tier 1 (core SUTs)
 #   --tier 1,2   union
 
 run:
-  smoke_duration_s: 60       # M2-M7 gate; does NOT vary by SUT
-  full_duration_s: 14400     # 4 hours; M9 only
+  smoke_duration_s: 60       # smoke gate; does NOT vary by SUT
+  full_duration_s: 14400     # 4 hours; full run only
   seeds: [1, 2, 3]           # 3-seed floor; bump to 10 for tighter bands
   dict_modes: ["on", "off"]  # both axes published per the plan; quoted to defeat YAML 1.1 bool coercion
   parallel_cells: 8          # 16-core host, leave 8 cores for OS+collector
@@ -196,7 +196,7 @@ suts:
   - id: libxml2
     tier: 1
     lang: c
-    engine: libfuzzer   # M6 deviation from plan's AFL++ choice; see PROGRESS Notes
+    engine: libfuzzer   # libxml2 uses libfuzzer (not AFL++) for host-toolchain compatibility
     grammar: null       # Tiny XML EBNF embedded in harness.c
     pin:
       repo: https://gitlab.gnome.org/GNOME/libxml2.git

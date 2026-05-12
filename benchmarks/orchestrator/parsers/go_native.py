@@ -8,9 +8,6 @@ Sample stderr lines emitted by `go test -fuzz=Fuzz`:
 
 Crashes appear at `testdata/fuzz/<TestName>/...` and the corresponding
 stderr message is `--- FAIL: ...`.
-
-Implementation deferred to M3 (simdjson-go is the first Go SUT). For M2
-this stub exposes a no-op parser so the orchestrator imports succeed.
 """
 
 from __future__ import annotations
@@ -27,7 +24,7 @@ _RUNNING_RE = re.compile(
 )
 
 
-def parse_line(line: str, state: dict) -> Optional[dict]:  # pragma: no cover - filled in M3
+def parse_line(line: str, state: dict) -> Optional[dict]:  # pragma: no cover
     m = _RUNNING_RE.search(line)
     if not m:
         return None
