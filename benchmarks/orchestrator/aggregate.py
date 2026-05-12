@@ -1,67 +1,57 @@
-"""Aggregate per-cell run.json + samples.jsonl into a single parquet.
+"""Aggregate per-cell run.json + samples.jsonl into one CSV.
 
 For a given <run-id> (smoke or full), walks
   results/<stage>/<run-id>/<sut>/<variant>/dict-<m>/seed-<n>/
 and writes
-  reports/<run-id>/results.parquet
+  reports/<run-id>/results.csv
   reports/<run-id>/summary.csv
+  reports/<run-id>/pvalues.csv  (only when each variant has ≥3 seeds)
 
-results.parquet has one row per (sut, variant, dict, seed, t_s); summary.csv
-has one row per (sut, variant, dict) with final metrics + Mann-Whitney U
-p-values when there are at least 3 seeds (skipped on smoke runs that use
-1 seed).
+results.csv has one row per (sut, variant, dict_mode, seed, t_s); summary.csv
+has one row per (sut, variant, dict_mode, seed) with final metrics.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
+import math
 from pathlib import Path
 from typing import Iterator
 
 import pandas as pd
-from scipy.stats import mannwhitneyu  # type: ignore[import-untyped]
 
 from schema import Run, Sample
 
 
-def _crash_artifacts(cell_dir: Path) -> list[Path]:
-    """Yield crash artifact files for a cell. Engine-specific layouts:
-        libfuzzer:    cwd/crash-<hash>, cwd/leak-<hash>, cwd/oom-<hash>
-        Go testing.F: testdata/fuzz/<TestName>/<hash>
+def _mannwhitneyu_greater(x: list[float], y: list[float]) -> tuple[float, float]:
+    """One-sided Mann-Whitney U (alternative=greater), normal approximation.
+
+    Returns (U, p_value). The normal approximation is calibrated for n ≥ 8 per
+    group; for smaller n the p-value is approximate but the U statistic is
+    exact. We use it because scipy is a 50MB dependency for one test.
     """
-    out: list[Path] = []
-    for child in cell_dir.iterdir():
-        n = child.name
-        if child.is_file() and (n.startswith("crash-")
-                                 or n.startswith("leak-")
-                                 or n.startswith("oom-")):
-            out.append(child)
-    testdata = cell_dir / "testdata" / "fuzz"
-    if testdata.is_dir():
-        for fn in testdata.rglob("*"):
-            if fn.is_file():
-                out.append(fn)
-    return out
-
-
-def _byte_hash(path: Path) -> str:
-    h = hashlib.sha256()
-    h.update(path.read_bytes())
-    return h.hexdigest()[:16]
-
-
-def _dedup_crashes(cell_dir: Path) -> int:
-    """Conservative content-based dedup. The plan calls for ASan-replay +
-    symbolicated stack-hash dedup; that needs ASan-instrumented sibling
-    binaries (BARKUS_SAN=1 builds) which we don't keep alongside production
-    binaries today. Until that lands, group by file-content sha256 — gives
-    a strict upper bound on unique crashes (each unique file is at least
-    one unique crash; the real number is ≤ this)."""
-    artifacts = _crash_artifacts(cell_dir)
-    if not artifacts:
-        return 0
-    return len({_byte_hash(p) for p in artifacts})
+    nx, ny = len(x), len(y)
+    if nx == 0 or ny == 0:
+        return 0.0, 1.0
+    pairs = [(v, 0) for v in x] + [(v, 1) for v in y]
+    pairs.sort(key=lambda p: p[0])
+    ranks = [0.0] * len(pairs)
+    i = 0
+    while i < len(pairs):
+        j = i
+        while j + 1 < len(pairs) and pairs[j + 1][0] == pairs[i][0]:
+            j += 1
+        avg_rank = (i + j) / 2 + 1
+        for k in range(i, j + 1):
+            ranks[k] = avg_rank
+        i = j + 1
+    R_x = sum(ranks[k] for k in range(len(pairs)) if pairs[k][1] == 0)
+    U_x = R_x - nx * (nx + 1) / 2
+    mean = nx * ny / 2
+    sd = math.sqrt(nx * ny * (nx + ny + 1) / 12)
+    if sd == 0:
+        return U_x, 1.0
+    z = (U_x - mean) / sd
+    return U_x, 0.5 * math.erfc(z / math.sqrt(2))
 
 
 def _walk_cells(run_dir: Path) -> Iterator[Path]:
@@ -93,7 +83,7 @@ def _read_cell(cell_dir: Path) -> tuple[Run, list[Sample]]:
 
 
 def aggregate(run_id: str, results_root: Path, reports_root: Path) -> Path:
-    """Aggregate one run-id. Returns path to results.parquet."""
+    """Aggregate one run-id. Returns path to results.csv."""
     # Locate the run dir under results/{smoke,full}/<run-id>/.
     candidates = [results_root / stage / run_id for stage in ("smoke", "full")]
     run_dirs = [d for d in candidates if d.exists()]
@@ -115,7 +105,7 @@ def aggregate(run_id: str, results_root: Path, reports_root: Path) -> Path:
                 "tier": run.tier,
                 "sut": run.sut,
                 "variant": run.variant,
-                "dict": run.dict_mode,
+                "dict_mode": run.dict_mode,
                 "seed": run.seed,
                 "engine": run.engine,
                 "barkus_sha": run.barkus_sha,
@@ -130,7 +120,7 @@ def aggregate(run_id: str, results_root: Path, reports_root: Path) -> Path:
         summary_rows.append({
             "sut": run.sut,
             "variant": run.variant,
-            "dict": run.dict_mode,
+            "dict_mode": run.dict_mode,
             "seed": run.seed,
             "engine": run.engine,
             "duration_s": run.duration_s,
@@ -138,7 +128,6 @@ def aggregate(run_id: str, results_root: Path, reports_root: Path) -> Path:
             "final_execs": run.final.execs,
             "final_execs_per_sec": run.final.execs_per_sec,
             "final_crashes_unique": run.final.crashes_unique_engine,
-            "crashes_unique_dedup": _dedup_crashes(cell),
             "time_to_first_crash_s": run.final.time_to_first_crash_s,
         })
 
@@ -149,33 +138,30 @@ def aggregate(run_id: str, results_root: Path, reports_root: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.DataFrame(rows)
-    parquet_path = out_dir / "results.parquet"
-    df.to_parquet(parquet_path, index=False)
+    results_path = out_dir / "results.csv"
+    df.to_csv(results_path, index=False)
 
     summary = pd.DataFrame(summary_rows)
-    # Write per-seed summary; report.py aggregates across seeds when rendering
-    # so all the stats (mean ± std, p-values) come from the same source rows.
+    # Per-seed summary; report.py aggregates across seeds when rendering so
+    # mean ± std + p-values come from the same source rows.
     summary.to_csv(out_dir / "summary.csv", index=False)
 
     # Mann-Whitney U vs raw, for each (sut, variant != raw) — skipped if
     # n_seeds < 3 since the test is meaningless on tiny samples.
     pvals: list[dict] = []
     for sut, sut_df in summary.groupby("sut"):
-        raw_edges = sut_df[sut_df.variant == "raw"]["final_edges"].values
+        raw_edges = list(sut_df[sut_df.variant == "raw"]["final_edges"].values)
         if len(raw_edges) < 3:
             continue
         for variant, var_df in sut_df.groupby("variant"):
             if variant == "raw":
                 continue
-            v_edges = var_df["final_edges"].values
+            v_edges = list(var_df["final_edges"].values)
             if len(v_edges) < 3:
                 continue
-            try:
-                stat, p = mannwhitneyu(v_edges, raw_edges, alternative="greater")
-            except ValueError:
-                continue
-            pvals.append({"sut": sut, "variant": variant, "U": float(stat), "p_vs_raw": float(p)})
+            U, p = _mannwhitneyu_greater(v_edges, raw_edges)
+            pvals.append({"sut": sut, "variant": variant, "U": U, "p_vs_raw": p})
     if pvals:
         pd.DataFrame(pvals).to_csv(out_dir / "pvalues.csv", index=False)
 
-    return parquet_path
+    return results_path

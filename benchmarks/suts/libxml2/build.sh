@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Build the libxml2 fuzz harness binaries.
 #
-# Engine: clang's built-in libFuzzer via -fsanitize=fuzzer (deviation from
-# the plan's AFL++ choice; see harness.c top comment for why). Same
-# instrumentation as M5's Rust SUTs, so edges are comparable cross-engine
-# within the libFuzzer family.
+# Engine selection: driven by $CC.
+#   afl-clang-fast (default inside barkus-c-suts image) → AFL++ instrumented;
+#                          run via afl-fuzz.
+#   clang (host fallback)  → libFuzzer (-fsanitize=fuzzer); run via
+#                          -max_total_time. The host cannot build AFL++
+#                          v4.21c against LLVM 20.
+# Either path produces four binaries with the same names; the orchestrator
+# picks the engine from config.yaml.
 #
-# Builds 4 binaries from a single harness.c:
-#   barkus_strict, barkus_nearvalid, barkus_havoc — `-DBARKUS_VARIANT`
-#                                                   `-DBARKUS_PROFILE=N`
-#   raw                                            — no defines
+# BARKUS_SAN=1 layers AddressSanitizer on top (post-hoc crash dedup;
+# 2-3× execs/sec tax — never use for timed runs).
 
 set -euo pipefail
 
@@ -18,7 +20,6 @@ REPO_ROOT="$(cd "${HERE}/../../.." && pwd)"
 
 source "${HERE}/pin.txt"
 
-# Ensure libbarkus_ffi.a is built. Reuses the artifact M3 already produced.
 if [[ ! -f "${REPO_ROOT}/target/release/libbarkus_ffi.a" ]]; then
     (cd "${REPO_ROOT}" && cargo build -p barkus-ffi --release)
 fi
@@ -28,21 +29,25 @@ XML_INCLUDE="$(pkg-config --cflags-only-I libxml-2.0 2>/dev/null || echo -I/usr/
 XML_LIBS="$(pkg-config --libs libxml-2.0 2>/dev/null || echo -lxml2)"
 
 CC="${CC:-clang}"
-# BARKUS_SAN=0 (default) → libfuzzer-only; the timed M9 run uses this so
-#                          execs/sec isn't crippled by ASan's 2-3× tax.
-# BARKUS_SAN=1            → +AddressSanitizer; used by the post-hoc crash
-#                          dedup pass and during harness development.
-SAN_FLAGS="-fsanitize=fuzzer"
+case "${CC##*/}" in
+    afl-clang-fast|afl-clang-lto)
+        ENGINE_FLAGS=""   # afl-clang-fast supplies its own instrumentation
+        ;;
+    *)
+        ENGINE_FLAGS="-fsanitize=fuzzer"
+        ;;
+esac
 if [[ "${BARKUS_SAN:-0}" == "1" ]]; then
-    SAN_FLAGS="-fsanitize=fuzzer,address"
+    ENGINE_FLAGS="${ENGINE_FLAGS},address"
+    ENGINE_FLAGS="${ENGINE_FLAGS#,}"   # strip leading comma if AFL+ASan
 fi
-echo "using CC=${CC}  SAN_FLAGS=${SAN_FLAGS}"
+echo "using CC=${CC}  ENGINE_FLAGS=${ENGINE_FLAGS}"
 
 build_one() {
     local out="$1" defs="$2"
-    echo "==> ${CC} ${SAN_FLAGS} -> ${out}"
+    echo "==> ${CC} ${ENGINE_FLAGS} -> ${out}"
     "${CC}" -O2 -g -Wall \
-        ${SAN_FLAGS} \
+        ${ENGINE_FLAGS} \
         ${defs} \
         ${XML_INCLUDE} \
         -o "${HERE}/${out}" \

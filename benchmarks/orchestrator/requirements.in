@@ -13,15 +13,11 @@ pyyaml==6.0.2
 # typed schema validation for run.json + samples.jsonl
 pydantic==2.10.6
 
-# results aggregation
+# results aggregation (CSV; pyarrow/parquet dropped — CSV is enough at our row counts)
 pandas==2.2.3
-pyarrow==18.1.0
 
-# plotting: SVG + PNG only, no PDF
+# plotting: PNG output for REPORT.md
 matplotlib==3.9.4
-
-# Mann-Whitney U test for variant comparison
-scipy==1.14.1
 
 # REPORT.md templating
 jinja2==3.1.5

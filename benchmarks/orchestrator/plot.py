@@ -1,7 +1,4 @@
-"""Generate per-SUT plots (SVG + PNG) from results.parquet.
-
-NO PDF — the plan locks the report deliverable to Markdown + SVG/PNG only.
-"""
+"""Generate per-SUT plots (PNG) from results.csv."""
 
 from __future__ import annotations
 
@@ -14,21 +11,18 @@ import matplotlib.pyplot as plt  # noqa: E402  (must follow the use() call)
 import pandas as pd  # noqa: E402
 
 
-def _save(fig, out_dir: Path, name: str) -> tuple[Path, Path]:
-    """Save the same figure as both SVG and PNG; return (svg, png) paths."""
-    svg_path = out_dir / f"{name}.svg"
-    png_path = out_dir / f"{name}.png"
-    fig.savefig(svg_path, format="svg", bbox_inches="tight")
-    fig.savefig(png_path, format="png", bbox_inches="tight", dpi=144)
+def _save(fig, out_dir: Path, name: str) -> Path:
+    path = out_dir / f"{name}.png"
+    fig.savefig(path, format="png", bbox_inches="tight", dpi=144)
     plt.close(fig)
-    return svg_path, png_path
+    return path
 
 
 def plot_coverage_over_time(df: pd.DataFrame, sut: str, out_dir: Path) -> Path:
-    """One line per (variant, dict). Mean ± std band when seeds >= 2."""
+    """One line per (variant, dict_mode). Mean ± std band when seeds >= 2."""
     sub = df[df.sut == sut]
     fig, ax = plt.subplots(figsize=(9, 5))
-    for (variant, dict_mode), g in sub.groupby(["variant", "dict"]):
+    for (variant, dict_mode), g in sub.groupby(["variant", "dict_mode"]):
         agg = g.groupby("t_s")["edges"].agg(["mean", "std", "count"]).reset_index()
         label = f"{variant} (dict={dict_mode})"
         line, = ax.plot(agg.t_s, agg["mean"], label=label, linewidth=1.6)
@@ -45,18 +39,17 @@ def plot_coverage_over_time(df: pd.DataFrame, sut: str, out_dir: Path) -> Path:
     ax.set_title(f"{sut} — coverage over time")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="lower right", fontsize=8, ncol=2)
-    svg, _ = _save(fig, out_dir, f"{sut}_coverage")
-    return svg
+    return _save(fig, out_dir, f"{sut}_coverage")
 
 
 def plot_execs_per_sec(df: pd.DataFrame, sut: str, out_dir: Path) -> Path:
-    """Bar chart of mean execs/sec per (variant, dict)."""
+    """Bar chart of mean execs/sec per (variant, dict_mode)."""
     sub = df[df.sut == sut]
     summary = (
-        sub.groupby(["variant", "dict"])["execs_per_sec"]
+        sub.groupby(["variant", "dict_mode"])["execs_per_sec"]
         .mean()
         .reset_index()
-        .pivot(index="variant", columns="dict", values="execs_per_sec")
+        .pivot(index="variant", columns="dict_mode", values="execs_per_sec")
     )
     fig, ax = plt.subplots(figsize=(8, 4))
     summary.plot(kind="bar", ax=ax, edgecolor="black")
@@ -65,15 +58,14 @@ def plot_execs_per_sec(df: pd.DataFrame, sut: str, out_dir: Path) -> Path:
     ax.set_xlabel("")
     ax.grid(True, axis="y", alpha=0.3)
     plt.xticks(rotation=20, ha="right")
-    svg, _ = _save(fig, out_dir, f"{sut}_eps")
-    return svg
+    return _save(fig, out_dir, f"{sut}_eps")
 
 
 def plot_crashes_over_time(df: pd.DataFrame, sut: str, out_dir: Path) -> Path:
-    """Step-plot of unique-engine crashes per (variant, dict)."""
+    """Step-plot of unique-engine crashes per (variant, dict_mode)."""
     sub = df[df.sut == sut]
     fig, ax = plt.subplots(figsize=(9, 4))
-    for (variant, dict_mode), g in sub.groupby(["variant", "dict"]):
+    for (variant, dict_mode), g in sub.groupby(["variant", "dict_mode"]):
         agg = g.groupby("t_s")["crashes"].mean().reset_index()
         ax.step(
             agg.t_s, agg["crashes"], label=f"{variant} (dict={dict_mode})",
@@ -84,13 +76,12 @@ def plot_crashes_over_time(df: pd.DataFrame, sut: str, out_dir: Path) -> Path:
     ax.set_title(f"{sut} — crashes over time")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper left", fontsize=8, ncol=2)
-    svg, _ = _save(fig, out_dir, f"{sut}_crashes")
-    return svg
+    return _save(fig, out_dir, f"{sut}_crashes")
 
 
-def plot_all(parquet_path: Path, out_dir: Path) -> dict[str, dict[str, Path]]:
-    """For each SUT in the parquet, emit coverage / eps / crashes plots."""
-    df = pd.read_parquet(parquet_path)
+def plot_all(results_path: Path, out_dir: Path) -> dict[str, dict[str, Path]]:
+    """For each SUT in results.csv, emit coverage / eps / crashes plots."""
+    df = pd.read_csv(results_path)
     plots: dict[str, dict[str, Path]] = {}
     for sut in sorted(df["sut"].unique()):
         plots[sut] = {

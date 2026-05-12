@@ -196,7 +196,7 @@ suts:
   - id: libxml2
     tier: 1
     lang: c
-    engine: libfuzzer   # libxml2 uses libfuzzer (not AFL++) for host-toolchain compatibility
+    engine: aflpp       # afl-clang-fast inside barkus-c-suts image; LLVMFuzzerTestOneInput-compat persistent loop
     grammar: null       # Tiny XML EBNF embedded in harness.c
     pin:
       repo: https://gitlab.gnome.org/GNOME/libxml2.git

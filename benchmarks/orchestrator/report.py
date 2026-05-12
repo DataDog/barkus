@@ -1,9 +1,4 @@
-"""Assemble REPORT.md from results.parquet + summary.csv + per-SUT plots.
-
-The Markdown report is the single deliverable for the paper. Plots are
-embedded as SVG/PNG (no PDF). Summary tables are inline GitHub-Flavoured
-Markdown.
-"""
+"""Assemble REPORT.md from results.csv + summary.csv + per-SUT plots."""
 
 from __future__ import annotations
 
@@ -14,11 +9,24 @@ import pandas as pd
 from jinja2 import Environment
 
 
+def _md(df: pd.DataFrame, floatfmt: str = ".2f") -> str:
+    """Render a small DataFrame as a GitHub-Flavoured Markdown table."""
+    if df.empty:
+        return "_(empty)_"
+    def fmt(v):
+        return format(v, floatfmt) if isinstance(v, float) else str(v)
+    head = "| " + " | ".join(df.columns) + " |"
+    sep  = "| " + " | ".join("---" for _ in df.columns) + " |"
+    body = ["| " + " | ".join(fmt(v) for v in row) + " |"
+            for row in df.itertuples(index=False)]
+    return "\n".join([head, sep, *body])
+
+
 REPORT_TMPL = """\
 # Barkus Benchmark Report — `{{ run_id }}`
 
 Generated {{ generated_at }} from
-[`results.parquet`](results.parquet) and
+[`results.csv`](results.csv) and
 [`summary.csv`](summary.csv).
 
 ## Provenance
@@ -29,7 +37,7 @@ Generated {{ generated_at }} from
 | {{ k }} | `{{ v }}` |
 {% endfor %}
 
-## Summary (per SUT × variant × dict)
+## Summary (per SUT × variant × dict_mode)
 
 {{ summary_table }}
 
@@ -38,15 +46,15 @@ Generated {{ generated_at }} from
 
 **Coverage over time** (mean ± std-dev band when seeds ≥ 2):
 
-![{{ sut }} coverage](plots/{{ sut }}_coverage.svg)
+![{{ sut }} coverage](plots/{{ sut }}_coverage.png)
 
 **Exec rate per variant**:
 
-![{{ sut }} execs/sec](plots/{{ sut }}_eps.svg)
+![{{ sut }} execs/sec](plots/{{ sut }}_eps.png)
 
 **Crash count over time**:
 
-![{{ sut }} crashes](plots/{{ sut }}_crashes.svg)
+![{{ sut }} crashes](plots/{{ sut }}_crashes.png)
 
 {{ per_sut_tables[sut] }}
 
@@ -60,45 +68,17 @@ Generated {{ generated_at }} from
 p-values < 0.05 indicate the variant's edges-at-end-of-run is
 statistically greater than `raw`'s. Skipped on smoke runs (n_seeds < 3).
 {% endif %}
-
----
-
-_Reproducibility:_ this report was generated from a fully pinned toolchain
-manifest (`versions.lock`). Re-running on a different host with the same
-manifest reproduces these numbers within ~2× std-dev (fuzzers are
-non-deterministic; provenance fields above are bit-identical).
 """
-
-
-def _md_table(df: pd.DataFrame) -> str:
-    """Render a small DataFrame as a GitHub-Flavoured Markdown table."""
-    if df.empty:
-        return "_(empty)_"
-    cols = list(df.columns)
-    lines = ["| " + " | ".join(cols) + " |",
-             "|" + "|".join(["---"] * len(cols)) + "|"]
-    for _, row in df.iterrows():
-        cells = []
-        for c in cols:
-            v = row[c]
-            if isinstance(v, float):
-                cells.append(f"{v:.2f}" if abs(v) < 1000 else f"{v:.0f}")
-            else:
-                cells.append(str(v))
-        lines.append("| " + " | ".join(cells) + " |")
-    return "\n".join(lines)
 
 
 def render(report_dir: Path, run_id: str) -> Path:
     """Render REPORT.md inside report_dir. Returns its path."""
     summary = pd.read_csv(report_dir / "summary.csv")
-    parquet = report_dir / "results.parquet"
-    df = pd.read_parquet(parquet)
+    df = pd.read_csv(report_dir / "results.csv")
 
     env = Environment()
     tmpl = env.from_string(REPORT_TMPL)
 
-    # Provenance from the first row (all rows of a run share these).
     sample_row = df.iloc[0]
     provenance = {
         "run_id": run_id,
@@ -109,9 +89,8 @@ def render(report_dir: Path, run_id: str) -> Path:
         "n_seeds_per_cell": int(summary["seed"].nunique()) if "seed" in summary else "?",
     }
 
-    # Aggregate summary across seeds per (sut, variant, dict).
     grouped = (
-        summary.groupby(["sut", "variant", "dict"])
+        summary.groupby(["sut", "variant", "dict_mode"])
         .agg(n_seeds=("seed", "count"),
              edges_mean=("final_edges", "mean"),
              edges_std=("final_edges", "std"),
@@ -120,25 +99,25 @@ def render(report_dir: Path, run_id: str) -> Path:
         .reset_index()
     )
     grouped["edges_std"] = grouped["edges_std"].fillna(0)
-    summary_table = _md_table(grouped[["sut", "variant", "dict", "n_seeds",
-                                       "edges_mean", "edges_std",
-                                       "eps_mean", "crashes"]])
+    summary_table = _md(grouped[["sut", "variant", "dict_mode", "n_seeds",
+                                  "edges_mean", "edges_std",
+                                  "eps_mean", "crashes"]])
 
     suts = sorted(grouped["sut"].unique())
     per_sut_tables: dict[str, str] = {}
     for sut in suts:
         s = grouped[grouped.sut == sut][
-            ["variant", "dict", "n_seeds", "edges_mean", "edges_std",
+            ["variant", "dict_mode", "n_seeds", "edges_mean", "edges_std",
              "eps_mean", "crashes"]
-        ].copy()
-        per_sut_tables[sut] = _md_table(s)
+        ]
+        per_sut_tables[sut] = _md(s)
 
     pvalues_table = ""
     pv_path = report_dir / "pvalues.csv"
     if pv_path.exists():
         pv = pd.read_csv(pv_path)
         if not pv.empty:
-            pvalues_table = _md_table(pv)
+            pvalues_table = _md(pv, floatfmt=".3f")
 
     rendered = tmpl.render(
         run_id=run_id,

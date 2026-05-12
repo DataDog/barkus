@@ -20,8 +20,12 @@ from typing import Optional
 _KV_RE = re.compile(r"^([\w_]+)\s*:\s*(\S+)\s*$")
 
 
-def read_stats(stats_path: Path) -> Optional[dict]:  # pragma: no cover
-    """Read `fuzzer_stats` and return a normalized sample dict, or None."""
+def read_stats(stats_path: Path) -> Optional[dict]:
+    """Read `fuzzer_stats` and return a normalized sample dict, or None.
+
+    Returns None if the file does not yet exist (AFL++ writes it for the
+    first time ~30s after launch) or if it has not yet recorded execs.
+    """
     try:
         text = stats_path.read_text()
     except FileNotFoundError:

@@ -1,7 +1,7 @@
 //! Shared helpers used by every barkus_* fuzz_target in this SUT.
 //!
 //! Direct Rust use of barkus-core (NOT the C FFI), so all three
-//! ValidityMode variants are first-class — no M3 fallback applies here.
+//! ValidityMode variants are first-class.
 
 use barkus_core::generate::decode;
 use barkus_core::ir::GrammarIr;

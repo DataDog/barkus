@@ -6,9 +6,9 @@ Subcommands:
     build      run every benchmarks/suts/<id>/build.sh in dependency order
     smoke      60s/cell gate; one seed; serial; surfaces broken harnesses
     full       4h × N seeds × 2 dict-modes per cell; ThreadPoolExecutor with
-               taskset CPU pinning. Writes versions.lock at start.
-    aggregate  samples.jsonl × all cells -> results.parquet + summary.csv
-    report     plots (SVG+PNG) + REPORT.md
+               taskset CPU pinning.
+    aggregate  samples.jsonl × all cells -> results.csv + summary.csv
+    report     plots (PNG) + REPORT.md
 
 Exit code from smoke/full = number of failed cells.
 """
@@ -17,13 +17,10 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import json
-import os
-import platform
+import queue
 import shutil
 import subprocess
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -31,6 +28,7 @@ from pathlib import Path
 import yaml  # type: ignore[import-untyped]
 
 from collector import (
+    collect_aflpp,
     collect_fake,
     collect_go_native,
     collect_libfuzzer,
@@ -107,27 +105,6 @@ def _enumerate_cells(
     return cells
 
 
-# -- CPU slot allocator ------------------------------------------------------
-
-class CpuSlotPool:
-    """Bounded pool of CPU pin ids; threads block until a slot is free."""
-
-    def __init__(self, max_cells: int):
-        self._available: list[int] = list(range(max_cells))
-        self._cv = threading.Condition()
-
-    def acquire(self) -> int:
-        with self._cv:
-            while not self._available:
-                self._cv.wait()
-            return self._available.pop(0)
-
-    def release(self, slot: int) -> None:
-        with self._cv:
-            self._available.append(slot)
-            self._cv.notify()
-
-
 # -- Cell runner (shared by smoke + full) ------------------------------------
 
 def _run_cell(
@@ -177,12 +154,13 @@ def _run_cell(
                 grammar_in_image=sut_obj.get("grammar_path_in_image"),
                 cpu_pin=cpu_pin, tier=cell["tier"],
             )
-        elif engine == "libfuzzer":
+        elif engine in ("libfuzzer", "aflpp"):
             harness_dir = sut_obj.get("harness_dir")
             if not harness_dir:
-                return False, "missing harness_dir in config.yaml", cell_dir
+                return False, f"missing harness_dir in config.yaml", cell_dir
             binary_path = REPO_ROOT / harness_dir / variant_obj["id"]
-            collect_libfuzzer(
+            collector = collect_libfuzzer if engine == "libfuzzer" else collect_aflpp
+            collector(
                 out_dir=cell_dir, run_id=run_id, sut=cell["sut"],
                 variant=cell["variant"], seed=cell["seed"], dict_mode=cell["dict"],
                 duration_s=duration_s, sample_period_s=sample_period_s,
@@ -205,59 +183,6 @@ def _label(cell: dict) -> str:
         f"{cell['sut']}/{cell['variant']} "
         f"dict={cell['dict']} seed={cell['seed']}"
     )
-
-
-# -- versions.lock writer ----------------------------------------------------
-
-def _versions_lock(cfg: dict, run_id: str, report_dir: Path) -> Path:
-    """Capture every pinned dep into reports/<run-id>/versions.lock so a
-    re-runner can verify they're on the same toolchain set."""
-    def safe_check(cmd: list[str]) -> str:
-        try:
-            return subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip()
-        except Exception:
-            return "unavailable"
-
-    suts = []
-    for sut in cfg["suts"]:
-        pin = sut.get("pin", {})
-        suts.append({
-            "id": sut["id"],
-            "engine": sut["engine"],
-            "repo": pin.get("repo"),
-            "commit": pin.get("commit"),
-            "tag": pin.get("tag"),
-        })
-
-    manifest = {
-        "run_id": run_id,
-        "barkus_sha": _barkus_sha(),
-        "host": {
-            "kernel": platform.release(),
-            "machine": platform.machine(),
-            "cpu_count": os.cpu_count(),
-        },
-        "toolchains": {
-            "rustc": safe_check(["rustc", "--version"]),
-            "cargo": safe_check(["cargo", "--version"]),
-            "go": safe_check(["go", "version"]),
-            "clang": safe_check(["clang", "--version"]).split("\n", 1)[0],
-            "cargo_fuzz": safe_check(["cargo-fuzz", "--version"]),
-        },
-        "suts": suts,
-        "matrix": {
-            "seeds": cfg["run"]["seeds"],
-            "dict_modes": cfg["run"]["dict_modes"],
-            "full_duration_s": cfg["run"]["full_duration_s"],
-            "smoke_duration_s": cfg["run"]["smoke_duration_s"],
-            "parallel_cells": cfg["run"]["parallel_cells"],
-        },
-    }
-
-    report_dir.mkdir(parents=True, exist_ok=True)
-    out = report_dir / "versions.lock"
-    out.write_text(json.dumps(manifest, indent=2) + "\n")
-    return out
 
 
 # -- subcommands -------------------------------------------------------------
@@ -319,23 +244,25 @@ def cmd_full(args: argparse.Namespace) -> int:
     if args.parallel is not None:
         parallel = int(args.parallel)
 
-    report_dir = REPORTS_ROOT / run_id
-    versions_path = _versions_lock(cfg, run_id, report_dir)
-    print(
-        f"full: run_id={run_id} cells={len(cells)} "
-        f"duration={duration}s parallel={parallel} versions={versions_path}"
-    )
+    print(f"full: run_id={run_id} cells={len(cells)} "
+          f"duration={duration}s parallel={parallel}")
     eta_s = (len(cells) * duration) / max(parallel, 1)
     print(f"  estimated wall-clock: {eta_s/3600:.1f} h "
           f"({datetime.timedelta(seconds=int(eta_s))})")
 
-    slots = CpuSlotPool(parallel)
+    # CPU pin allocator: each worker pops a slot, runs the cell, returns
+    # the slot. ThreadPoolExecutor bounds concurrency to `parallel`, so
+    # the queue is sized to match and never blocks.
+    slots: queue.Queue[int] = queue.Queue()
+    for i in range(parallel):
+        slots.put(i)
+
     failures: list[str] = []
     completed = 0
     started_at = time.monotonic()
 
     def _worker(cell: dict) -> tuple[dict, bool, str]:
-        slot = slots.acquire()
+        slot = slots.get()
         try:
             ok, msg, _ = _run_cell(
                 cell,
@@ -345,7 +272,7 @@ def cmd_full(args: argparse.Namespace) -> int:
             )
             return cell, ok, msg
         finally:
-            slots.release(slot)
+            slots.put(slot)
 
     with ThreadPoolExecutor(max_workers=parallel) as ex:
         futures = [ex.submit(_worker, c) for c in cells]
@@ -411,8 +338,8 @@ def cmd_report(args: argparse.Namespace) -> int:
         return 1
     plots_dir = report_dir / "plots"
     plots_dir.mkdir(exist_ok=True)
-    parquet = report_dir / "results.parquet"
-    plot_all(parquet, plots_dir)
+    results_csv = report_dir / "results.csv"
+    plot_all(results_csv, plots_dir)
     out = render(report_dir, args.run_id)
     print(f"report: wrote {out}")
     return 0
@@ -448,7 +375,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="parallel cells override (default: cfg.run.parallel_cells)")
     p_full.set_defaults(func=cmd_full)
 
-    p_agg = sub.add_parser("aggregate", help="samples.jsonl -> parquet")
+    p_agg = sub.add_parser("aggregate", help="samples.jsonl -> results.csv")
     p_agg.add_argument("--run-id", required=True)
     p_agg.set_defaults(func=cmd_aggregate)
 

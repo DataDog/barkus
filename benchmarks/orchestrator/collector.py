@@ -23,9 +23,9 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable, Optional
 
-from parsers import go_native, libfuzzer
+from parsers import aflpp, go_native, libfuzzer
 from parsers.fake import synthetic_sample
 from schema import FinalStats, HostInfo, Run, Sample
 
@@ -51,9 +51,59 @@ def write_samples(out_dir: Path, samples: Iterable[Sample]) -> None:
 
 def write_run(out_dir: Path, run: Run) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    # by_alias=True so the JSON has "dict" not "dict_mode" — matches the
-    # output schema in the plan and what aggregate.py / report.py expect.
-    (out_dir / "run.json").write_text(run.model_dump_json(indent=2, by_alias=True) + "\n")
+    (out_dir / "run.json").write_text(run.model_dump_json(indent=2) + "\n")
+
+
+def _stream_subprocess(
+    *,
+    cmd: list[str],
+    env: Optional[dict],
+    cwd: Path,
+    parse_line: Callable[[str, dict], Optional[dict]],
+    is_crash_line: Callable[[str], bool],
+    duration_s: int,
+    sample_period_s: int,
+) -> tuple[list[Sample], Optional[int]]:
+    """Run a fuzzer that emits stats lines on stderr; sample at fixed cadence.
+
+    Shared loop for collect_go_native + collect_libfuzzer. Returns
+    (samples, first_crash_t_s). first_crash_t_s is None when no crash line
+    was seen.
+    """
+    state: dict = {"execs": 0, "execs_per_sec": 0, "edges": 0, "crashes": 0, "rss_mb": 0}
+    samples: list[Sample] = [Sample(t_s=0, **state)]
+
+    proc = subprocess.Popen(
+        cmd, env=env, cwd=cwd,
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        text=True, bufsize=1, start_new_session=True,
+    )
+    _spawn_watchdog(proc, duration_s + 30)
+
+    start = time.monotonic()
+    next_sample_t = sample_period_s
+    first_crash_t_s: Optional[int] = None
+
+    assert proc.stderr is not None
+    for line in proc.stderr:
+        parsed = parse_line(line, state)
+        if parsed is not None:
+            state.update(parsed)
+        if is_crash_line(line):
+            state["crashes"] = state.get("crashes", 0) + 1
+            if first_crash_t_s is None:
+                first_crash_t_s = int(time.monotonic() - start)
+        elapsed = time.monotonic() - start
+        while elapsed >= next_sample_t and next_sample_t <= duration_s:
+            samples.append(Sample(t_s=next_sample_t, **state))
+            next_sample_t += sample_period_s
+
+    proc.wait(timeout=duration_s + 30)
+    # Backfill missed sample slots (subprocess died early or stderr quiet).
+    while next_sample_t <= duration_s:
+        samples.append(Sample(t_s=next_sample_t, **state))
+        next_sample_t += sample_period_s
+    return samples, first_crash_t_s
 
 
 def collect_fake(
@@ -206,83 +256,30 @@ def collect_go_native(
     if testdata_dir.exists():
         shutil.rmtree(testdata_dir)
 
-    # State carried across stderr lines. Go's testing.F emits running totals;
-    # we just snapshot them at sample_period_s intervals.
-    state: dict = {"execs": 0, "execs_per_sec": 0, "edges": 0, "crashes": 0, "rss_mb": 0}
-    samples: list[Sample] = [Sample(t_s=0, **state)]
-
-    # Make sure -test.fuzz prints to stderr in line-buffered mode.
-    proc = subprocess.Popen(
-        cmd,
-        env=env,
-        cwd=out_dir,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        start_new_session=True,
+    samples, first_crash_t_s = _stream_subprocess(
+        cmd=cmd, env=env, cwd=out_dir,
+        parse_line=go_native.parse_line,
+        is_crash_line=lambda line: "FAIL" in line or "panic:" in line.lower(),
+        duration_s=duration_s, sample_period_s=sample_period_s,
     )
-    _spawn_watchdog(proc, duration_s + 30)
-
-    start = time.monotonic()
-    next_sample_t = sample_period_s
-    first_crash_t_s: int | None = None
-
-    assert proc.stderr is not None
-    for line in proc.stderr:
-        # Update running state from the line if it parses.
-        parsed = go_native.parse_line(line, state)
-        if parsed is not None:
-            state.update(parsed)
-
-        # The fuzzer prints elapsed/execs lines AND any crash banners.
-        # Crash detection here is coarse; aggregate.py runs a content-hash
-        # dedup pass over the saved artifacts.
-        if "FAIL" in line or "panic:" in line.lower():
-            state["crashes"] = state.get("crashes", 0) + 1
-            if first_crash_t_s is None:
-                first_crash_t_s = int(time.monotonic() - start)
-
-        # Emit samples at fixed cadence regardless of how often Go emits lines.
-        elapsed = time.monotonic() - start
-        while elapsed >= next_sample_t and next_sample_t <= duration_s:
-            samples.append(Sample(t_s=next_sample_t, **state))
-            next_sample_t += sample_period_s
-
-    proc.wait(timeout=duration_s + 30)
-
-    # Backfill any sample slots we missed (subprocess died early or stderr quiet).
-    while next_sample_t <= duration_s:
-        samples.append(Sample(t_s=next_sample_t, **state))
-        next_sample_t += sample_period_s
 
     write_samples(out_dir, samples)
-
     last = samples[-1]
     final = FinalStats(
-        edges=last.edges,
-        execs=last.execs,
+        edges=last.edges, execs=last.execs,
         execs_per_sec=last.execs_per_sec,
         crashes_unique_engine=last.crashes,
         time_to_first_crash_s=first_crash_t_s,
     )
     run = Run(
-        run_id=run_id,
-        tier=tier,
-        sut=sut,
-        variant=variant,
-        seed=seed,
-        dict_mode=dict_mode,
-        engine="go-testing-f",
+        run_id=run_id, tier=tier, sut=sut, variant=variant, seed=seed,
+        dict_mode=dict_mode, engine="go-testing-f",
         engine_version=_go_version(),
-        barkus_sha=barkus_sha,
-        sut_sha=sut_sha,
-        grammar_path=grammar_path,
-        grammar_sha=None,
+        barkus_sha=barkus_sha, sut_sha=sut_sha,
+        grammar_path=grammar_path, grammar_sha=None,
         duration_s=duration_s,
         host=_host_info(cpu_pin=str(cpu_pin) if cpu_pin is not None else None),
-        corpus_seeded=False,
-        final=final,
+        corpus_seeded=False, final=final,
     )
     write_run(out_dir, run)
     return run
@@ -406,49 +403,17 @@ def collect_libfuzzer(
     cmd = _maybe_taskset(cpu_pin) + cmd_core
     _ = dict_mode  # libFuzzer auto-extracts a dict from the binary; no flag toggles it
 
-    state: dict = {"execs": 0, "execs_per_sec": 0, "edges": 0, "crashes": 0, "rss_mb": 0}
-    samples: list[Sample] = [Sample(t_s=0, **state)]
-
-    proc = subprocess.Popen(
-        cmd,
-        cwd=out_dir,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        start_new_session=True,
+    samples, first_crash_t_s = _stream_subprocess(
+        cmd=cmd, env=None, cwd=out_dir,
+        parse_line=libfuzzer.parse_line,
+        is_crash_line=lambda line: "ERROR:" in line and "Sanitizer" in line,
+        duration_s=duration_s, sample_period_s=sample_period_s,
     )
-    _spawn_watchdog(proc, duration_s + 30)
-
-    start = time.monotonic()
-    next_sample_t = sample_period_s
-    first_crash_t_s: int | None = None
-    assert proc.stderr is not None
-    for line in proc.stderr:
-        parsed = libfuzzer.parse_line(line, state)
-        if parsed is not None:
-            state.update(parsed)
-
-        if "ERROR:" in line and "Sanitizer" in line:
-            state["crashes"] = state.get("crashes", 0) + 1
-            if first_crash_t_s is None:
-                first_crash_t_s = int(time.monotonic() - start)
-
-        elapsed = time.monotonic() - start
-        while elapsed >= next_sample_t and next_sample_t <= duration_s:
-            samples.append(Sample(t_s=next_sample_t, **state))
-            next_sample_t += sample_period_s
-
-    proc.wait(timeout=duration_s + 30)
-    while next_sample_t <= duration_s:
-        samples.append(Sample(t_s=next_sample_t, **state))
-        next_sample_t += sample_period_s
 
     write_samples(out_dir, samples)
     last = samples[-1]
     final = FinalStats(
-        edges=last.edges,
-        execs=last.execs,
+        edges=last.edges, execs=last.execs,
         execs_per_sec=last.execs_per_sec,
         crashes_unique_engine=last.crashes,
         time_to_first_crash_s=first_crash_t_s,
@@ -465,6 +430,138 @@ def collect_libfuzzer(
     )
     write_run(out_dir, run)
     return run
+
+
+def collect_aflpp(
+    *,
+    out_dir: Path,
+    run_id: str,
+    sut: str,
+    variant: str,
+    seed: int,
+    dict_mode: str,
+    duration_s: int,
+    sample_period_s: int,
+    barkus_sha: str,
+    sut_sha: str,
+    grammar_path: str | None,
+    binary_path: Path,
+    cpu_pin: int | None = None,
+    tier: int = 1,
+) -> Run:
+    """Run an AFL++ cell. Cold-start corpus, poll fuzzer_stats."""
+    if not binary_path.exists():
+        raise FileNotFoundError(
+            f"aflpp harness not built: {binary_path} "
+            f"(run benchmarks/suts/<sut>/build.sh in barkus-c-suts image)"
+        )
+
+    seeds_dir = out_dir / "seeds"
+    afl_out = out_dir / "afl_out"
+    for d in (seeds_dir, afl_out):
+        if d.exists():
+            shutil.rmtree(d)
+    seeds_dir.mkdir(parents=True)
+    afl_out.mkdir(parents=True)
+    # AFL++ refuses to start with an empty input dir; a single zero-content
+    # seed is the cold-start equivalent (the engine's mutator takes it from
+    # there).
+    (seeds_dir / "seed0").write_bytes(b"\x00")
+
+    cmd_core = [
+        "afl-fuzz",
+        "-i", str(seeds_dir),
+        "-o", str(afl_out),
+        "-V", str(duration_s),         # exit cleanly after duration_s seconds
+        "-s", str(seed),               # PRNG seed — same role as -seed for libfuzzer
+        "--", str(binary_path),
+    ]
+    env = os.environ.copy()
+    env["AFL_NO_UI"] = "1"             # disable curses UI
+    env["AFL_NO_AFFINITY"] = "1"       # taskset already pins; don't fight it
+    env["AFL_AUTORESUME"] = "0"
+    env["AFL_SKIP_CPUFREQ"] = "1"      # CI hosts often can't set governor
+    cmd = _maybe_taskset(cpu_pin) + cmd_core
+    _ = dict_mode  # afl-clang-fast auto-embeds a dict; no flag to toggle
+
+    state: dict = {"execs": 0, "execs_per_sec": 0, "edges": 0, "crashes": 0, "rss_mb": 0}
+    samples: list[Sample] = [Sample(t_s=0, **state)]
+
+    proc = subprocess.Popen(
+        cmd, env=env, cwd=out_dir,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    _spawn_watchdog(proc, duration_s + 60)
+
+    stats_path = afl_out / "default" / "fuzzer_stats"
+    crashes_dir = afl_out / "default" / "crashes"
+    start = time.monotonic()
+    next_sample_t = sample_period_s
+    first_crash_t_s: int | None = None
+
+    while proc.poll() is None:
+        elapsed = time.monotonic() - start
+        if elapsed >= next_sample_t and next_sample_t <= duration_s:
+            snap = aflpp.read_stats(stats_path)
+            if snap is not None:
+                state.update(snap)
+            if state["crashes"] > 0 and first_crash_t_s is None:
+                first_crash_t_s = int(elapsed)
+            samples.append(Sample(t_s=next_sample_t, **state))
+            next_sample_t += sample_period_s
+        # Sleep until the next sample boundary or until the process exits,
+        # whichever is sooner.
+        sleep_for = max(0.1, min(1.0, next_sample_t - elapsed))
+        time.sleep(sleep_for)
+
+    proc.wait(timeout=duration_s + 60)
+    # Final snapshot after exit so the last sample reflects fuzzer_stats's
+    # last write.
+    snap = aflpp.read_stats(stats_path)
+    if snap is not None:
+        state.update(snap)
+    if crashes_dir.exists():
+        n_crashes = sum(1 for p in crashes_dir.iterdir()
+                        if p.is_file() and p.name.startswith("id:"))
+        state["crashes"] = max(state["crashes"], n_crashes)
+        if state["crashes"] > 0 and first_crash_t_s is None:
+            first_crash_t_s = duration_s
+    while next_sample_t <= duration_s:
+        samples.append(Sample(t_s=next_sample_t, **state))
+        next_sample_t += sample_period_s
+
+    write_samples(out_dir, samples)
+    last = samples[-1]
+    final = FinalStats(
+        edges=last.edges,
+        execs=last.execs,
+        execs_per_sec=last.execs_per_sec,
+        crashes_unique_engine=last.crashes,
+        time_to_first_crash_s=first_crash_t_s,
+    )
+    run = Run(
+        run_id=run_id, tier=tier, sut=sut, variant=variant, seed=seed,
+        dict_mode=dict_mode, engine="aflpp",
+        engine_version=_aflpp_version(),
+        barkus_sha=barkus_sha, sut_sha=sut_sha,
+        grammar_path=grammar_path, grammar_sha=None,
+        duration_s=duration_s,
+        host=_host_info(cpu_pin=str(cpu_pin) if cpu_pin is not None else None),
+        corpus_seeded=False, final=final,
+    )
+    write_run(out_dir, run)
+    return run
+
+
+def _aflpp_version() -> str:
+    try:
+        out = subprocess.check_output(
+            ["afl-fuzz", "-V"], text=True, stderr=subprocess.STDOUT,
+        )
+        return out.strip().splitlines()[0]
+    except Exception:
+        return "afl-fuzz unknown"
 
 
 def validate_cell(out_dir: Path) -> tuple[bool, str]:

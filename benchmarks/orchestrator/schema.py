@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt
+from pydantic import BaseModel, NonNegativeInt
 
 
 # -- engine types ------------------------------------------------------------
@@ -65,19 +65,12 @@ class Run(BaseModel):
     files keep validating after schema bumps.
     """
 
-    # Allow population by either the JSON key or the Python attribute name,
-    # so dict_mode (Python) maps to "dict" (JSON) without shadowing
-    # BaseModel.dict() in subclasses.
-    model_config = ConfigDict(populate_by_name=True)
-
     run_id: str
     tier: int
     sut: str
     variant: str
     seed: int
-    # JSON key is "dict" (matches plan output schema); Python attribute is
-    # `dict_mode` to avoid shadowing pydantic's BaseModel.dict method.
-    dict_mode: DictMode = Field(alias="dict", serialization_alias="dict")
+    dict_mode: DictMode
 
     engine: EngineId
     engine_version: str

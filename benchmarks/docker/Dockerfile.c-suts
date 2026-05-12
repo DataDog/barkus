@@ -3,13 +3,11 @@
 # C SUT image. Inherits barkus-base which already pins clang-17,
 # AFL++ v4.21c, and libbarkus_ffi.a.
 #
-# Engine note: host smoke validation uses clang -fsanitize=fuzzer
-# (libFuzzer) because AFL++ v4.21c does not build against host clang-20.
-# Inside this image, clang-17 is available so AFL++ LLVM mode WORKS;
-# this Dockerfile prefers afl-clang-fast and falls back to libFuzzer for
-# parity with the host. Either path produces the same harness binary
-# names, and the orchestrator's libfuzzer engine wraps both since
-# afl-clang-fast also links a libFuzzer-compat persistent loop.
+# Engine: AFL++ via afl-clang-fast. The orchestrator dispatches engine
+# "aflpp" (see config.yaml) and drives the resulting binaries with
+# afl-fuzz. The libxml2/build.sh script picks the right instrumentation
+# based on $CC, so host-side libFuzzer builds and image-side AFL++
+# builds share one source.
 #
 # Build context: repo root.
 
@@ -41,8 +39,8 @@ COPY benchmarks/suts/libxml2 /src/barkus/benchmarks/suts/libxml2
 
 WORKDIR /src/barkus/benchmarks/suts/libxml2
 # Use afl-clang-fast inside the image (clang-17 + AFL++ v4.21c is the
-# tested combination in barkus-base). build.sh's CC env var lets us
-# pick the compiler; afl-clang-fast emits libFuzzer-compatible binaries.
+# tested combination in barkus-base). build.sh's CC env var picks the
+# compiler and the matching instrumentation flags.
 RUN CC=afl-clang-fast bash build.sh
 
 WORKDIR /src/barkus
