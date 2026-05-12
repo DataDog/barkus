@@ -8,30 +8,15 @@ use barkus_core::ir::GrammarIr;
 use barkus_core::profile::{Profile, ValidityMode};
 use std::sync::OnceLock;
 
-/// Minimal CSS-shaped EBNF used as a placeholder until benchmarks/fixtures/
-/// grammars-v4 (the antlr/grammars-v4 submodule) lands. The point of M5 is
-/// to validate end-to-end Rust+libFuzzer plumbing; the real CSS3 grammar
-/// from antlr/grammars-v4 swaps in later without harness changes.
-// `r##"..."##` so the literal `"#"` inside the grammar (id selector) does
-// not prematurely close the raw string.
-pub const CSS_GRAMMAR: &str = r##"
-start = stylesheet ;
-stylesheet = rule | rule stylesheet ;
-rule = selector " " "{" " " decls "}" " " ;
-decls = decl | decl decls ;
-decl = ident ":" " " value ";" " " ;
-selector = ident | ident "." ident | "#" ident ;
-value = ident | ident " " value | num ;
-ident = "div" | "p" | "a" | "span" | "body" | "html"
-      | "color" | "background" | "margin" | "padding"
-      | "blue" | "red" | "green" | "auto" | "inherit"
-      | "x" | "y" | "z" ;
-num = "0" | "1" | "10" | "100" ;
-"##;
+// Vendored from antlr/grammars-v4 (css3/css3Lexer.g4, css3/css3Parser.g4).
+// Embedded via include_str! so the harness has no runtime dependency on the
+// grammar files.
+pub const CSS_LEXER: &str = include_str!("../../../../../grammars/css3/css3Lexer.g4");
+pub const CSS_PARSER: &str = include_str!("../../../../../grammars/css3/css3Parser.g4");
 
 pub fn grammar() -> &'static GrammarIr {
     static G: OnceLock<GrammarIr> = OnceLock::new();
-    G.get_or_init(|| barkus_ebnf::compile(CSS_GRAMMAR).expect("compile CSS grammar"))
+    G.get_or_init(|| barkus_antlr::compile_split(CSS_LEXER, CSS_PARSER).expect("compile CSS grammar"))
 }
 
 pub fn run_with_mode(tape: &[u8], mode: ValidityMode) {

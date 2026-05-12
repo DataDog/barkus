@@ -19,10 +19,9 @@ cssparser = { git = "https://github.com/servo/rust-cssparser.git", rev = "9339dd
 
 # Local barkus crates — direct Rust deps, NOT via FFI, so the harnesses
 # can use Profile::builder().validity_mode(...) to ship three distinct
-# variants (the EBNF FFI gap that affected M3's simdjson-go does NOT
-# apply here because we bypass the FFI entirely).
+# variants
 barkus-core = { path = "../../../../crates/barkus-core" }
-barkus-ebnf = { path = "../../../../crates/barkus-ebnf" }
+barkus-antlr = { path = "../../../../crates/barkus-antlr" }
 
 [[bin]]
 name = "barkus_strict"

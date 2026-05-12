@@ -23,6 +23,8 @@ MANIFEST=(
     "mysql/MySQLParser.g4               sql/mysql/Oracle/MySQLParser.g4    1"
     "html/HTMLLexer.g4                  html/HTMLLexer.g4                  0"
     "html/HTMLParser.g4                 html/HTMLParser.g4                 0"
+    "css3/css3Lexer.g4                  css3/css3Lexer.g4                  0"
+    "css3/css3Parser.g4                 css3/css3Parser.g4                 0"
 )
 
 # Strip Java semantic predicates like `{this.serverVersionGe(80014)}?` from
