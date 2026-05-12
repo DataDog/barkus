@@ -21,6 +21,8 @@ MANIFEST=(
     "trino/TrinoParser.g4               sql/trino/TrinoParser.g4           0"
     "mysql/MySQLLexer.g4                sql/mysql/Oracle/MySQLLexer.g4     1"
     "mysql/MySQLParser.g4               sql/mysql/Oracle/MySQLParser.g4    1"
+    "html/HTMLLexer.g4                  html/HTMLLexer.g4                  0"
+    "html/HTMLParser.g4                 html/HTMLParser.g4                 0"
 )
 
 # Strip Java semantic predicates like `{this.serverVersionGe(80014)}?` from

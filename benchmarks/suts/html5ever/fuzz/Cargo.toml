@@ -15,7 +15,7 @@ libfuzzer-sys = "=0.4.10"
 html5ever = "=0.27.0"
 markup5ever_rcdom = "=0.3.0"
 barkus-core = { path = "../../../../crates/barkus-core" }
-barkus-ebnf = { path = "../../../../crates/barkus-ebnf" }
+barkus-antlr = { path = "../../../../crates/barkus-antlr" }
 
 [[bin]]
 name = "barkus_strict"

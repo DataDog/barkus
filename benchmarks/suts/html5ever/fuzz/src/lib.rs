@@ -11,21 +11,15 @@ use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::RcDom;
 use std::sync::OnceLock;
 
-/// Tiny HTML EBNF placeholder. Real html.g4 from antlr/grammars-v4
-/// follow-up (M5 rationale applies — point of M8 is plumbing).
-pub const HTML_GRAMMAR: &str = r##"
-start = doc ;
-doc = "<html>" content "</html>" ;
-content = element content | "" ;
-element = "<" tag ">" inner "</" tag ">" | "<" tag "/>" ;
-inner = text | element ;
-text = "hello" | "world" | "x" ;
-tag = "p" | "div" | "span" | "a" | "b" | "h1" ;
-"##;
+// Vendored from antlr/grammars-v4 (html/HTMLLexer.g4, html/HTMLParser.g4).
+// Embedded via include_str! so the harness has no runtime dependency on the
+// grammar files.
+pub const HTML_LEXER: &str = include_str!("../../../../../grammars/html/HTMLLexer.g4");
+pub const HTML_PARSER: &str = include_str!("../../../../../grammars/html/HTMLParser.g4");
 
 pub fn grammar() -> &'static GrammarIr {
     static G: OnceLock<GrammarIr> = OnceLock::new();
-    G.get_or_init(|| barkus_ebnf::compile(HTML_GRAMMAR).expect("compile HTML grammar"))
+    G.get_or_init(|| barkus_antlr::compile_split(HTML_LEXER, HTML_PARSER).expect("compile HTML grammar"))
 }
 
 fn parse_html(s: &str) {
