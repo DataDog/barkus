@@ -5,21 +5,16 @@ use barkus_core::ir::GrammarIr;
 use barkus_core::profile::{Profile, ValidityMode};
 use std::sync::OnceLock;
 
-/// Minimal XML/SVG-shaped EBNF placeholder. Real svg.g4 / xml.g4 from
-/// antlr/grammars-v4 land in a future iteration; M5's job is just to
-/// validate the libFuzzer-on-Rust-SUT plumbing for both cssparser AND
-/// resvg, not to ship paper-quality grammars.
-pub const SVG_GRAMMAR: &str = r##"
-start = svg ;
-svg = "<svg>" content "</svg>" ;
-content = element | element content | "" ;
-element = "<rect/>" | "<circle/>" | "<line/>" | "<path/>"
-        | "<g>" content "</g>" ;
-"##;
+// SVG is XML-shaped. There is no `svg.g4` in antlr/grammars-v4 at the pinned
+// commit, so we use the vendored XML grammar — usvg's parser exercises the
+// same XML well-formedness path before SVG-specific validation. Loaded via
+// include_str! so the harness has no runtime dependency on the grammar files.
+pub const XML_LEXER: &str = include_str!("../../../../../grammars/xml/XMLLexer.g4");
+pub const XML_PARSER: &str = include_str!("../../../../../grammars/xml/XMLParser.g4");
 
 pub fn grammar() -> &'static GrammarIr {
     static G: OnceLock<GrammarIr> = OnceLock::new();
-    G.get_or_init(|| barkus_ebnf::compile(SVG_GRAMMAR).expect("compile SVG grammar"))
+    G.get_or_init(|| barkus_antlr::compile_split(XML_LEXER, XML_PARSER).expect("compile XML grammar"))
 }
 
 pub fn run_with_mode(tape: &[u8], mode: ValidityMode) {

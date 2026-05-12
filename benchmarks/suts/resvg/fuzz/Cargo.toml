@@ -19,7 +19,7 @@ libfuzzer-sys = "=0.4.10"
 usvg = { git = "https://github.com/linebender/resvg.git", rev = "3a0fdba53ccf2d346b54cc53ba7adf0ee60d0707", package = "usvg" }
 
 barkus-core = { path = "../../../../crates/barkus-core" }
-barkus-ebnf = { path = "../../../../crates/barkus-ebnf" }
+barkus-antlr = { path = "../../../../crates/barkus-antlr" }
 
 [[bin]]
 name = "barkus_strict"
