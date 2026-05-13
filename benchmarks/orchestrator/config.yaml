@@ -1,0 +1,236 @@
+# Barkus benchmark matrix — single source of truth.
+#
+# Tiers:
+#   0  fake/self-test cells used by the smoke check
+#   1  core SUTs (vitess, simdjson-go, cssparser, resvg, libxml2)
+#   2  extended SUTs (yaml-go, pg_query_go, html5ever)
+#
+# A cell is a tuple (sut, variant, dict, seed). Total cells per run =
+#   sum over SUTs of (#variants × #dict_modes × #seeds).
+#
+# Run modes (--tier flag on run.py):
+#   --tier 0     run only fake/self-test cells (smoke gate)
+#   --tier 1     run Tier 1 (core SUTs)
+#   --tier 1,2   union
+
+run:
+  smoke_duration_s: 60       # smoke gate; does NOT vary by SUT
+  full_duration_s: 14400     # 4 hours; full run only
+  seeds: [1, 2, 3]           # 3-seed floor; bump to 10 for tighter bands
+  dict_modes: ["on", "off"]  # both axes published per the plan; quoted to defeat YAML 1.1 bool coercion
+  parallel_cells: 8          # 16-core host, leave 8 cores for OS+collector
+
+defaults:
+  cold_start_corpus: true    # never seed; cold start everywhere
+  sanitizers_during_run: false
+  sanitizers_during_dedup: true
+  sample_period_s: 10        # collector cadence
+
+# Fake SUT used to validate the orchestrator pipeline end-to-end without
+# requiring a real fuzz engine. Tier 0 only — never included in tier 1/2 runs.
+suts:
+  - id: fake-sut
+    tier: 0
+    lang: fake
+    engine: fake
+    grammar: null
+    pin:
+      repo: ""
+      commit: ""
+    variants:
+      - id: fake-variant
+        kind: raw
+
+  - id: simdjson-go
+    tier: 1
+    lang: go
+    engine: go-testing-f
+    grammar: grammars/json/JSON.g4
+    pin:
+      repo: https://github.com/minio/simdjson-go.git
+      commit: d82c779820b28b701fc258ee32f5df4ffc368f2d
+    # Path to the test binary built by suts/simdjson-go/build.sh, relative to
+    # the repo root. The orchestrator launches it per cell with
+    # -test.fuzz=^<fuzz_func>$ and per-cell fuzzcachedir.
+    harness_binary: benchmarks/suts/simdjson-go/harness/harness.test
+    grammar_path_in_image: /opt/barkus/share/JSON.g4
+    variants:
+      - id: barkus_strict
+        kind: barkus
+        fuzz_func: FuzzBarkusStrict
+      - id: barkus_nearvalid
+        kind: barkus
+        fuzz_func: FuzzBarkusNearvalid
+      - id: barkus_havoc
+        kind: barkus
+        fuzz_func: FuzzBarkusHavoc
+      - id: raw
+        kind: raw
+        fuzz_func: FuzzRaw
+
+  - id: vitess
+    tier: 1
+    lang: go
+    engine: go-testing-f
+    grammar: null   # SQL FFI uses a built-in grammar; no external grammar file
+    pin:
+      repo: https://github.com/vitessio/vitess.git
+      commit: e8d9fa81d351066497a8d99f92e9e9f2ecfd69d0
+      tag: v24.0.0
+    harness_binary: benchmarks/suts/vitess/harness/harness.test
+    grammar_path_in_image: null
+    variants:
+      - id: barkus_strict
+        kind: barkus
+        fuzz_func: FuzzBarkusStrict
+      - id: barkus_nearvalid
+        kind: barkus
+        fuzz_func: FuzzBarkusNearvalid
+      - id: barkus_havoc
+        kind: barkus
+        fuzz_func: FuzzBarkusHavoc
+      - id: gofuzzheaders
+        kind: go-fuzz-headers
+        fuzz_func: FuzzGoFuzzHeaders
+      - id: raw
+        kind: raw
+        fuzz_func: FuzzRaw
+
+  - id: rust-cssparser
+    tier: 1
+    lang: rust
+    engine: libfuzzer
+    grammar: null   # CSS placeholder grammar embedded in fuzz/src/lib.rs
+    pin:
+      repo: https://github.com/servo/rust-cssparser.git
+      commit: 9339ddd71443463dfb85d1185ad50cd98b34bc8f
+      tag: v0.36.0
+    # The libfuzzer engine launches one binary per variant from this dir.
+    # The variant.id is appended to find the binary file name.
+    harness_dir: benchmarks/suts/rust-cssparser/target/x86_64-unknown-linux-gnu/release
+    variants:
+      - id: barkus_strict
+        kind: barkus
+      - id: barkus_nearvalid
+        kind: barkus
+      - id: barkus_havoc
+        kind: barkus
+      - id: arbitrary
+        kind: arbitrary
+      - id: raw
+        kind: raw
+
+  - id: yaml-go
+    tier: 2
+    lang: go
+    engine: go-testing-f
+    grammar: null
+    pin:
+      repo: https://github.com/go-yaml/yaml.git
+      commit: f6f7691b1fdeb513f56608cd2c32c51f8194bf51
+      tag: v3.0.1
+    harness_binary: benchmarks/suts/yaml-go/harness/harness.test
+    grammar_path_in_image: null
+    variants:
+      - id: barkus_strict
+        kind: barkus
+        fuzz_func: FuzzBarkusStrict
+      - id: barkus_nearvalid
+        kind: barkus
+        fuzz_func: FuzzBarkusNearvalid
+      - id: barkus_havoc
+        kind: barkus
+        fuzz_func: FuzzBarkusHavoc
+      - id: raw
+        kind: raw
+        fuzz_func: FuzzRaw
+
+  - id: pg_query_go
+    tier: 2
+    lang: go
+    engine: go-testing-f
+    grammar: null
+    pin:
+      repo: https://github.com/pganalyze/pg_query_go.git
+      commit: 6a1adb4a50b66ca95f2bb34409697c586e18fa28
+      tag: v6.2.2
+    harness_binary: benchmarks/suts/pg_query_go/harness/harness.test
+    grammar_path_in_image: null
+    variants:
+      - id: barkus_strict
+        kind: barkus
+        fuzz_func: FuzzBarkusStrict
+      - id: barkus_nearvalid
+        kind: barkus
+        fuzz_func: FuzzBarkusNearvalid
+      - id: barkus_havoc
+        kind: barkus
+        fuzz_func: FuzzBarkusHavoc
+      - id: gofuzzheaders
+        kind: go-fuzz-headers
+        fuzz_func: FuzzGoFuzzHeaders
+      - id: raw
+        kind: raw
+        fuzz_func: FuzzRaw
+
+  - id: html5ever
+    tier: 2
+    lang: rust
+    engine: libfuzzer
+    grammar: null
+    pin:
+      crate_version: 0.27.0
+    harness_dir: benchmarks/suts/html5ever/target/x86_64-unknown-linux-gnu/release
+    variants:
+      - id: barkus_strict
+        kind: barkus
+      - id: barkus_nearvalid
+        kind: barkus
+      - id: barkus_havoc
+        kind: barkus
+      - id: arbitrary
+        kind: arbitrary
+      - id: raw
+        kind: raw
+
+  - id: libxml2
+    tier: 1
+    lang: c
+    engine: aflpp       # afl-clang-fast inside barkus-c-suts image; LLVMFuzzerTestOneInput-compat persistent loop
+    grammar: null       # Tiny XML EBNF embedded in harness.c
+    pin:
+      repo: https://gitlab.gnome.org/GNOME/libxml2.git
+      commit: host-2.9.13
+      tag: host-2.9.13
+    harness_dir: benchmarks/suts/libxml2
+    variants:
+      - id: barkus_strict
+        kind: barkus
+      - id: barkus_nearvalid
+        kind: barkus
+      - id: barkus_havoc
+        kind: barkus
+      - id: raw
+        kind: raw
+
+  - id: resvg
+    tier: 1
+    lang: rust
+    engine: libfuzzer
+    grammar: null   # SVG placeholder grammar embedded in fuzz/src/lib.rs
+    pin:
+      repo: https://github.com/linebender/resvg.git
+      commit: 3a0fdba53ccf2d346b54cc53ba7adf0ee60d0707
+      tag: v0.47.0
+    harness_dir: benchmarks/suts/resvg/target/x86_64-unknown-linux-gnu/release
+    variants:
+      - id: barkus_strict
+        kind: barkus
+      - id: barkus_nearvalid
+        kind: barkus
+      - id: barkus_havoc
+        kind: barkus
+      - id: arbitrary
+        kind: arbitrary
+      - id: raw
+        kind: raw
