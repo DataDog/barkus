@@ -1,6 +1,6 @@
 module github.com/DataDog/barkus/benchmarks/suts/pg_query_go/harness
 
-go 1.22
+go 1.23
 
 toolchain go1.26.2
 
@@ -10,6 +10,6 @@ require (
 	github.com/pganalyze/pg_query_go/v6 v6.2.2
 )
 
-require google.golang.org/protobuf v1.31.0 // indirect
+require google.golang.org/protobuf v1.36.11 // indirect
 
 replace github.com/DataDog/barkus => ../../../..
