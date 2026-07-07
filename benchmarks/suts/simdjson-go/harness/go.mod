@@ -1,7 +1,7 @@
 module github.com/DataDog/barkus/benchmarks/suts/simdjson-go/harness
 
 // Pinned Go toolchain — must match Dockerfile.base ARG GO_VERSION.
-go 1.22
+go 1.25.0
 
 toolchain go1.26.1
 
@@ -13,7 +13,7 @@ require (
 require (
 	github.com/klauspost/compress v1.15.15 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.3 // indirect
-	golang.org/x/sys v0.0.0-20220704084225-05e143d24a9e // indirect
+	golang.org/x/sys v0.46.0 // indirect
 )
 
 // The barkus module is loaded from the parent repo. In the Docker image the
