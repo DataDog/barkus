@@ -15,7 +15,7 @@ libfuzzer-sys = "=0.4.10"
 arbitrary = { version = "=1.4.1", features = ["derive"] }
 
 # rust-cssparser pinned by SHA from pin.txt.
-cssparser = { git = "https://github.com/servo/rust-cssparser.git", rev = "9339ddd71443463dfb85d1185ad50cd98b34bc8f" }
+cssparser = { git = "https://github.com/servo/rust-cssparser.git", rev = "ddccc070a0261cb94195ed0f74095c67b86a8550" }
 
 # Local barkus crates — direct Rust deps, NOT via FFI, so the harnesses
 # can use Profile::builder().validity_mode(...) to ship three distinct
