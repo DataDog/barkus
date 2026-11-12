@@ -1,0 +1,32 @@
+[
+  {
+    "override_type": "replace",
+    "target": {"component": "getrandom", "origin": "getrandom"},
+    "replacement": {
+      "name": "getrandom",
+      "origin": "getrandom",
+      "license": ["MIT OR Apache-2.0"],
+      "copyright": ["The Rust Project Developers", "The rust-random Project Developers"]
+    }
+  },
+  {
+    "override_type": "replace",
+    "target": {"component": "rand", "origin": "rand"},
+    "replacement": {
+      "name": "rand",
+      "origin": "rand",
+      "license": ["MIT OR Apache-2.0"],
+      "copyright": ["Developers of the Rand project", "The Rust Project Developers"]
+    }
+  },
+  {
+    "override_type": "replace",
+    "target": {"component": "rand_core", "origin": "rand_core"},
+    "replacement": {
+      "name": "rand_core",
+      "origin": "rand_core",
+      "license": ["MIT OR Apache-2.0"],
+      "copyright": ["The Rand Project Developers"]
+    }
+  }
+]
