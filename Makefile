@@ -15,6 +15,7 @@ test: test-go
 license-3rdparty:
 	dd-license-attribution generate-sbom-csv \
 		--only-transitive-dependencies \
+		--override-spec .ddla-overrides \
 		https://github.com/DataDog/barkus > LICENSE-3rdparty.csv
 
 clean:
