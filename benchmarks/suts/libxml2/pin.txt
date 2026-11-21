@@ -1,8 +1,8 @@
 repo=https://gitlab.gnome.org/GNOME/libxml2.git
 # Host smoke validation uses the distro's libxml2 (Ubuntu 22.04 ships
-# 2.9.13, which is the version this M6 was validated against). For
-# reproducibility in M9, Dockerfile.c-suts builds 2.13.4 from source so
-# the pinned tarball is always identical regardless of host distro.
+# 2.9.13). For reproducibility, Dockerfile.c-suts builds 2.13.4 from
+# source so the pinned tarball is always identical regardless of host
+# distro.
 host_version=2.9.13
 container_tag=v2.13.4
 container_commit=5d6f2dafce8bb09a99b4d1e6ad525e8f6d31a48a

@@ -1,17 +1,10 @@
 /*
  * libxml2 fuzz harness — single source, four binaries via -DBARKUS_VARIANT.
  *
- * NOTE on engine choice (M6 deviation from plan, documented in PROGRESS.md):
- *   The plan picked AFL++ for C/C++ SUTs. AFL++ v4.21c does not build
- *   against the host's LLVM 20 (template incompatibilities) and the
- *   non-LLVM gcc/asm fallback hits a PATH self-recursion bug on this
- *   host. Rather than block M6, the harness ships as a libFuzzer target
- *   (clang -fsanitize=fuzzer), reusing M5's libFuzzer engine path in the
- *   orchestrator. Same instrumentation as the Rust SUTs, so edges are
- *   even more directly comparable across C and Rust. Dockerfile.c-suts
- *   can still build the AFL++ variant when LLVM 17 is available.
- *
- * libFuzzer entrypoint: LLVMFuzzerTestOneInput(data, size).
+ * Entry point: LLVMFuzzerTestOneInput(data, size). Compatible with both
+ * AFL++ via afl-clang-fast (the default inside barkus-c-suts) and clang's
+ * built-in libFuzzer (-fsanitize=fuzzer) when the host toolchain cannot
+ * build AFL++ — build.sh picks the instrumentation from $CC.
  *
  * Each barkus_* binary picks a ValidityMode via -DBARKUS_PROFILE=N at
  * compile time, then passes that to barkus_compile_with_config so the

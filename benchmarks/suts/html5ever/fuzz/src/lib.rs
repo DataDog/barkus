@@ -1,7 +1,7 @@
 //! Shared helpers for html5ever fuzz targets.
 //!
 //! Direct Rust use of barkus-core, so all three ValidityMode variants
-//! are first-class (no M3 fallback).
+//! are first-class.
 
 use barkus_core::generate::decode;
 use barkus_core::ir::GrammarIr;

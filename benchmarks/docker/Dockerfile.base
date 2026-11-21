@@ -1,0 +1,121 @@
+# syntax=docker/dockerfile:1.7
+#
+# Barkus benchmark base image.
+#
+# Build context: repo root (so the COPY steps can reach `crates/`, `Cargo.toml`,
+# `fixtures/`, etc.). Invoke via:
+#
+#   docker build -f benchmarks/docker/Dockerfile.base -t barkus-base:dev .
+#
+# Smoke check: `docker run barkus-base:dev /opt/barkus/test-roundtrip` exits 0.
+
+# Ubuntu 22.04 LTS pinned by content digest — never `latest`.
+FROM ubuntu:22.04@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    PATH=/usr/local/cargo/bin:/usr/local/go/bin:$PATH \
+    GOTOOLCHAIN=local \
+    CARGO_TERM_COLOR=never \
+    RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo
+
+# --- system packages ---------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg git build-essential pkg-config \
+        python3.10 python3-pip python3-venv \
+        libssl-dev zlib1g-dev xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- clang-17 from llvm.org snapshot (single major version line) -------------
+RUN curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key \
+      | gpg --dearmor -o /usr/share/keyrings/llvm.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main" \
+      > /etc/apt/sources.list.d/llvm.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+         clang-17 lld-17 llvm-17 llvm-17-dev libllvm17 \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-alternatives --install /usr/bin/clang clang /usr/bin/clang-17 100 \
+    && update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-17 100 \
+    && update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-17 100
+
+# --- Rust toolchain ----------------------------------------------------------
+ARG RUST_VERSION=1.95.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --default-toolchain ${RUST_VERSION} \
+                  --profile minimal --no-modify-path
+
+# --- Go toolchain ------------------------------------------------------------
+ARG GO_VERSION=1.26.2
+RUN curl -fsSL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz \
+      | tar -C /usr/local -xz
+
+# --- cbindgen ----------------------------------------------------------------
+ARG CBINDGEN_VERSION=0.27.0
+RUN cargo install cbindgen --version ${CBINDGEN_VERSION} --locked
+
+# --- AFL++ -------------------------------------------------------------------
+# Pinned to a release tag, not `stable`. Build the LLVM mode against clang-17.
+ARG AFLPP_REF=v4.21c
+RUN git clone --depth 1 --branch ${AFLPP_REF} \
+        https://github.com/AFLplusplus/AFLplusplus /tmp/aflpp \
+    && cd /tmp/aflpp \
+    && LLVM_CONFIG=llvm-config-17 make distrib \
+    && make install \
+    && cd / && rm -rf /tmp/aflpp
+
+# --- Build Barkus FFI from working tree --------------------------------------
+WORKDIR /src/barkus
+COPY Cargo.toml Cargo.lock README.md ./
+COPY crates ./crates
+COPY fixtures ./fixtures
+COPY grammars ./grammars
+COPY benchmarks/docker/cbindgen.toml ./benchmarks/docker/cbindgen.toml
+
+RUN cargo build -p barkus-ffi --release \
+    && mkdir -p /opt/barkus/lib /opt/barkus/include /opt/barkus/share \
+    && cp target/release/libbarkus_ffi.a /opt/barkus/lib/ \
+    && cbindgen --config benchmarks/docker/cbindgen.toml \
+                --crate barkus-ffi \
+                --output /opt/barkus/include/barkus.h \
+    && cp fixtures/grammars/json.ebnf /opt/barkus/share/json.ebnf \
+    && cp grammars/json/JSON.g4 /opt/barkus/share/JSON.g4
+
+# --- Compile the FFI smoke binary -------------------------------------------
+COPY benchmarks/docker/test-roundtrip.c /tmp/test-roundtrip.c
+RUN clang -O2 -Wall -Wextra -Werror \
+        -I/opt/barkus/include \
+        -o /opt/barkus/test-roundtrip /tmp/test-roundtrip.c \
+        /opt/barkus/lib/libbarkus_ffi.a \
+        -lpthread -ldl -lm
+
+# --- Versions manifest --------------------------------------------------------
+RUN { echo "ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7"; \
+      rustc --version; \
+      /usr/local/go/bin/go version; \
+      clang-17 --version | head -1; \
+      cbindgen --version; \
+      ( afl-fuzz -V 2>/dev/null || afl-fuzz 2>&1 | head -1 ) ; \
+    } > /opt/barkus/share/versions.lock
+
+# --- Python orchestrator -----------------------------------------------------
+# Hash-pinned install into an isolated venv so SUT layers can't drift the
+# orchestrator's Python deps. The orchestrator code is copied into the
+# source tree below so run.py's `REPO_ROOT = parents[2]` resolves to
+# /src/barkus, matching the host layout.
+COPY benchmarks/orchestrator/requirements.lock /opt/orchestrator/requirements.lock
+RUN python3 -m venv /opt/orchestrator/venv \
+    && /opt/orchestrator/venv/bin/pip install --no-cache-dir --quiet \
+         --require-hashes -r /opt/orchestrator/requirements.lock
+
+COPY benchmarks/orchestrator /src/barkus/benchmarks/orchestrator
+# Convenience launcher: `docker run <img> orchestrator smoke --tier 0`.
+# MPLCONFIGDIR + HOME default to /tmp so a non-root --user mapping
+# (UID with no entry in /etc/passwd) doesn't trip matplotlib / Go cache.
+RUN printf '#!/bin/sh\nexport MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/.mpl}"\nexport HOME="${HOME:-/tmp}"\nexec /opt/orchestrator/venv/bin/python /src/barkus/benchmarks/orchestrator/run.py "$@"\n' \
+      > /usr/local/bin/orchestrator \
+    && chmod +x /usr/local/bin/orchestrator
+
+WORKDIR /src/barkus
+CMD ["/opt/barkus/test-roundtrip"]

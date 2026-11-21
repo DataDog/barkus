@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1.7
+#
+# C SUT image. Inherits barkus-base which already pins clang-17,
+# AFL++ v4.21c, and libbarkus_ffi.a.
+#
+# Engine: AFL++ via afl-clang-fast. The orchestrator dispatches engine
+# "aflpp" (see config.yaml) and drives the resulting binaries with
+# afl-fuzz. The libxml2/build.sh script picks the right instrumentation
+# based on $CC, so host-side libFuzzer builds and image-side AFL++
+# builds share one source.
+#
+# Build context: repo root.
+
+FROM barkus-base:dev
+
+# libxml2 from source — distro-pinned tag, NOT `apt-get install` (distro
+# libxml2 versions vary between hosts and would make results non-
+# reproducible).
+ARG LIBXML2_TAG=v2.13.4
+ARG LIBXML2_REPO=https://gitlab.gnome.org/GNOME/libxml2.git
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        autoconf automake libtool pkg-config \
+        zlib1g-dev liblzma-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch ${LIBXML2_TAG} ${LIBXML2_REPO} /tmp/libxml2 \
+    && cd /tmp/libxml2 \
+    && ./autogen.sh --prefix=/opt/libxml2 --without-python --without-zlib --without-lzma \
+    && make -j"$(nproc)" \
+    && make install \
+    && cd / && rm -rf /tmp/libxml2
+
+ENV PKG_CONFIG_PATH="/opt/libxml2/lib/pkgconfig:${PKG_CONFIG_PATH:-}" \
+    LD_LIBRARY_PATH="/opt/libxml2/lib:${LD_LIBRARY_PATH:-}"
+
+# Bring in C SUT harness sources and build them.
+COPY benchmarks/suts/libxml2 /src/barkus/benchmarks/suts/libxml2
+
+WORKDIR /src/barkus/benchmarks/suts/libxml2
+# Use afl-clang-fast inside the image (clang-17 + AFL++ v4.21c is the
+# tested combination in barkus-base). build.sh's CC env var picks the
+# compiler and the matching instrumentation flags.
+RUN CC=afl-clang-fast bash build.sh
+
+WORKDIR /src/barkus
+CMD ["orchestrator", "--help"]

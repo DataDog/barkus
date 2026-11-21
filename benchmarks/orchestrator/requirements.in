@@ -1,0 +1,23 @@
+# Top-level Python dependencies for the Barkus benchmark orchestrator.
+#
+# To regenerate the hash-pinned lockfile (only when intentionally bumping a dep):
+#   pip install pip-tools==7.4.1
+#   pip-compile --generate-hashes --output-file requirements.lock requirements.in
+#
+# All runtime installs MUST use --require-hashes against requirements.lock so any
+# transitive drift is rejected.
+
+# config.yaml parsing
+pyyaml==6.0.2
+
+# typed schema validation for run.json + samples.jsonl
+pydantic==2.10.6
+
+# results aggregation (CSV; pyarrow/parquet dropped — CSV is enough at our row counts)
+pandas==2.2.3
+
+# plotting: PNG output for REPORT.md
+matplotlib==3.9.4
+
+# REPORT.md templating
+jinja2==3.1.5

@@ -1,3 +1,4 @@
 repo=https://github.com/minio/simdjson-go.git
 commit=d82c779820b28b701fc258ee32f5df4ffc368f2d
 tag=v0.4.5
+go_module=github.com/minio/simdjson-go
