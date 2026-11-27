@@ -773,3 +773,234 @@ fn roundtrip_preserved_for_non_power_of_two_alts() {
         }
     }
 }
+
+/// Modifier `min > profile.repetition_bounds.1` must clamp `hi` up to `lo` instead of panicking.
+#[test]
+fn modifier_min_exceeds_profile_repetition_bounds() {
+    // EBNF `4 * "a"` -> ZeroOrMore { min: 4, max: 4 } under default rep_bounds (0, 3).
+    let mut symbols = Vec::new();
+    let a = lit_sym(&mut symbols, b"a");
+    let alt = multi_alt(vec![(a, Modifier::ZeroOrMore { min: 4, max: 4 })]);
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![alt],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::default(); // repetition_bounds = (0, 3)
+    let mut rng = SmallRng::seed_from_u64(1);
+    let (ast_gen, tape, map_gen) = generate(&ir, &profile, &mut rng).unwrap();
+    assert_eq!(ast_gen.serialize(), b"aaaa");
+    assert!(map_gen.modifier_bytes.is_empty());
+
+    let (ast_dec, map_dec) = decode(&ir, &profile, &tape.bytes).unwrap();
+    assert_eq!(ast_dec.serialize(), b"aaaa");
+    assert!(map_dec.modifier_bytes.is_empty());
+
+    // OneOrMore under repetition_bounds = (0, 0) must emit lo = 1 without panicking.
+    let mut symbols2 = Vec::new();
+    let b = lit_sym(&mut symbols2, b"b");
+    let alt2 = multi_alt(vec![(b, Modifier::OneOrMore { min: 0, max: 5 })]);
+    let mut ir2 = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![alt2],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols: symbols2,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir2);
+
+    let zero_profile = Profile::builder().repetition_bounds(0, 0).build();
+    let (ast_gen2, tape2, _) = generate(&ir2, &zero_profile, &mut rng).unwrap();
+    assert_eq!(ast_gen2.serialize(), b"b");
+    let (ast_dec2, _) = decode(&ir2, &zero_profile, &tape2.bytes).unwrap();
+    assert_eq!(ast_dec2.serialize(), b"b");
+}
+
+/// `ZeroOrMore { min: 2, max: 4 }` at the depth boundary must round-trip identically
+/// between generate (`resolve_modifier_min`) and decode (`expand_symbol_ref_dec`).
+#[test]
+fn zero_or_more_nonzero_min_at_depth_limit_roundtrip() {
+    // S -> A{2..=4}, A -> "a". min_depth(A)=1, min_depth(S)=2.
+    // At max_depth=2, inside S (depth=1), remaining for A's children is 0 < min_depth(A),
+    // so symbol_fits_depth is false and both gen and dec must force count = min (2).
+    let mut symbols = Vec::new();
+    let a_lit = lit_sym(&mut symbols, b"a");
+    let a_nt = nt_sym(&mut symbols, ProductionId(1));
+
+    let alt = multi_alt(vec![(a_nt, Modifier::ZeroOrMore { min: 2, max: 4 })]);
+    let mut ir = GrammarIr {
+        productions: vec![
+            Production {
+                id: ProductionId(0),
+                name: "S".into(),
+                alternatives: vec![alt],
+                attrs: ProductionAttrs::default(),
+            },
+            Production {
+                id: ProductionId(1),
+                name: "A".into(),
+                alternatives: vec![simple_alt(a_lit)],
+                attrs: ProductionAttrs::default(),
+            },
+        ],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::builder().max_depth(2).build();
+    for seed in 0..50u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast_gen, tape, _) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast_dec, _) = decode(&ir, &profile, &tape.bytes).unwrap();
+        assert_eq!(ast_gen.serialize(), b"aa", "seed={seed}");
+        assert_eq!(ast_dec.serialize(), b"aa", "seed={seed}");
+    }
+}
+
+/// Productions with more than 256 alternatives (e.g., 452 SQL keywords) must round-trip
+/// identically and reach alternatives at indices >= 256.
+#[test]
+fn choice_over_256_alternatives_roundtrip() {
+    let n = 452usize;
+    let mut symbols = Vec::new();
+    let alts: Vec<Alternative> = (0..n)
+        .map(|i| {
+            let sym = lit_sym(&mut symbols, format!("kw_{i}").as_bytes());
+            simple_alt(sym)
+        })
+        .collect();
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "KW".into(),
+            alternatives: alts,
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::default();
+    let mut saw_above_255 = false;
+    for seed in 0..2_000u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast_gen, tape, _) = generate(&ir, &profile, &mut rng).unwrap();
+        // Header (2 bytes) + 2-byte LE choice = 4 bytes.
+        assert_eq!(tape.bytes.len(), 4);
+        let (ast_dec, _) = decode(&ir, &profile, &tape.bytes).unwrap();
+        let gen_out = ast_gen.serialize();
+        assert_eq!(
+            gen_out,
+            ast_dec.serialize(),
+            "round-trip mismatch seed={seed}"
+        );
+        let idx: usize = std::str::from_utf8(&gen_out)
+            .unwrap()
+            .strip_prefix("kw_")
+            .unwrap()
+            .parse()
+            .unwrap();
+        if idx >= 256 {
+            saw_above_255 = true;
+        }
+    }
+    assert!(saw_above_255, "never selected an alternative >= 256");
+}
+
+/// Repetition ranges larger than 256 must encode/decode cleanly without panicking.
+#[test]
+fn repetition_bounds_over_256_roundtrip() {
+    let mut symbols = Vec::new();
+    let x = lit_sym(&mut symbols, b"x");
+    let alt = multi_alt(vec![(x, Modifier::ZeroOrMore { min: 0, max: 300 })]);
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![alt],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::builder().repetition_bounds(0, 300).build();
+    let mut saw_above_255 = false;
+    for seed in 0..200u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast_gen, tape, _) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast_dec, _) = decode(&ir, &profile, &tape.bytes).unwrap();
+        let out = ast_gen.serialize();
+        assert_eq!(out, ast_dec.serialize(), "seed={seed}");
+        assert!(out.len() <= 300);
+        if out.len() > 255 {
+            saw_above_255 = true;
+        }
+    }
+    assert!(saw_above_255, "never generated repetition count > 255");
+}
+
+/// Mechanical TokenPool expansion must honor `SymbolRef.modifier` on both generate and decode.
+#[test]
+fn token_pool_mechanical_respects_symbol_modifier() {
+    let mut symbols = Vec::new();
+    let pool_term = SymbolId(symbols.len() as u32);
+    symbols.push(Symbol::Terminal(TerminalKind::TokenPool(PoolId(0))));
+    let digit = SymbolId(symbols.len() as u32);
+    symbols.push(Symbol::Terminal(TerminalKind::ByteRange(b'0', b'9')));
+
+    let alt = multi_alt(vec![(digit, Modifier::OneOrMore { min: 2, max: 4 })]);
+    let pool = TokenPoolEntry {
+        name: "NUM".into(),
+        alternatives: vec![alt],
+    };
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![simple_alt(pool_term)],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: vec![pool],
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::builder().repetition_bounds(0, 4).build();
+    let mut seen_lens = [false; 5];
+    for seed in 0..100u64 {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let (ast_gen, tape, _) = generate(&ir, &profile, &mut rng).unwrap();
+        let (ast_dec, _) = decode(&ir, &profile, &tape.bytes).unwrap();
+        let out = ast_gen.serialize();
+        assert_eq!(out, ast_dec.serialize(), "seed={seed}");
+        assert!(
+            (2..=4).contains(&out.len()),
+            "expected 2..=4 digits, got {out:?}"
+        );
+        assert!(out.iter().all(u8::is_ascii_digit));
+        seen_lens[out.len()] = true;
+    }
+    assert!(seen_lens[2] && seen_lens[3] && seen_lens[4]);
+}

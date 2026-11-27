@@ -457,3 +457,141 @@ fn token_pool_mechanical_expansion_no_hooks() {
     assert!(saw_foo, "never generated 'foo'");
     assert!(saw_bar, "never generated 'bar'");
 }
+
+// ── Regression tests: semantic hook TapeMap & node budget ──
+
+#[test]
+fn on_production_hook_empty_tape_map_stays_in_body() {
+    let mut symbols = Vec::new();
+    let a = lit_sym(&mut symbols, b"a");
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![simple_alt(a)],
+            attrs: ProductionAttrs {
+                semantic_hook: Some("test_override".into()),
+                ..ProductionAttrs::default()
+            },
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::default();
+    let cases: [&[u8]; 2] = [&[], &[0, 0]];
+    for empty_or_header_only in cases {
+        let mut hooks = OverrideHook;
+        let (ast, tape_map) =
+            decode_with_hooks(&ir, &profile, empty_or_header_only, &mut hooks).unwrap();
+        assert_eq!(ast.serialize(), b"OVERRIDDEN");
+        assert_eq!(tape_map.entries.len(), 1);
+        assert_eq!(tape_map.entries[0].tape_offset, 2);
+        assert_eq!(tape_map.entries[0].tape_len, 0);
+    }
+
+    // With 1 body byte present, tape_offset=2 and tape_len=1.
+    let mut hooks = OverrideHook;
+    let (_, tape_map) = decode_with_hooks(&ir, &profile, &[0, 0, 0x2a], &mut hooks).unwrap();
+    assert_eq!(tape_map.entries[0].tape_offset, 2);
+    assert_eq!(tape_map.entries[0].tape_len, 1);
+}
+
+#[test]
+fn on_production_hook_fallthrough_tape_map_covers_hook_byte() {
+    let mut symbols = Vec::new();
+    let a = lit_sym(&mut symbols, b"a");
+    let b = lit_sym(&mut symbols, b"b");
+
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![simple_alt(a), simple_alt(b)],
+            attrs: ProductionAttrs {
+                // OverrideHook returns None for unknown hook names -> fallthrough.
+                semantic_hook: Some("fallthrough".into()),
+                ..ProductionAttrs::default()
+            },
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::default();
+    let mut rng = SmallRng::seed_from_u64(7);
+    let mut gen_hooks = OverrideHook;
+    let (ast_gen, tape, map_gen) =
+        generate_with_hooks(&ir, ir.start, &profile, &mut rng, &mut gen_hooks).unwrap();
+    // 2 header bytes + 1 hook byte + 1 alt choice byte = 4 bytes.
+    assert_eq!(tape.bytes.len(), 4);
+    assert_eq!(map_gen.entries.len(), 1);
+    assert_eq!(map_gen.entries[0].tape_offset, 2);
+    assert_eq!(map_gen.entries[0].tape_len, 2);
+
+    let mut dec_hooks = OverrideHook;
+    let (ast_dec, map_dec) = decode_with_hooks(&ir, &profile, &tape.bytes, &mut dec_hooks).unwrap();
+    assert_eq!(ast_gen.serialize(), ast_dec.serialize());
+    assert_eq!(map_dec.entries.len(), 1);
+    assert_eq!(map_dec.entries[0].tape_offset, 2);
+    assert_eq!(map_dec.entries[0].tape_len, 2);
+}
+
+#[test]
+fn on_production_hook_respects_max_total_nodes() {
+    use barkus_core::error::{BudgetKind, GenerateError};
+
+    let mut symbols = Vec::new();
+    let a = lit_sym(&mut symbols, b"a");
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![simple_alt(a)],
+            attrs: ProductionAttrs {
+                semantic_hook: Some("test_override".into()),
+                ..ProductionAttrs::default()
+            },
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    // Hook creates 2 nodes (Production + Terminal), so max_total_nodes=1 must fail.
+    let budget_one = Profile::builder().max_total_nodes(1).build();
+    let mut rng = SmallRng::seed_from_u64(1);
+    let mut gen_hooks = OverrideHook;
+    assert!(matches!(
+        generate_with_hooks(&ir, ir.start, &budget_one, &mut rng, &mut gen_hooks),
+        Err(GenerateError::BudgetExhausted {
+            kind: BudgetKind::MaxTotalNodes
+        })
+    ));
+
+    let mut dec_hooks = OverrideHook;
+    assert!(matches!(
+        decode_with_hooks(&ir, &budget_one, &[0, 0, 1], &mut dec_hooks),
+        Err(GenerateError::BudgetExhausted {
+            kind: BudgetKind::MaxTotalNodes
+        })
+    ));
+
+    // With max_total_nodes=2, both paths succeed with 2 nodes.
+    let budget_two = Profile::builder().max_total_nodes(2).build();
+    let mut gen_hooks2 = OverrideHook;
+    let (ast_gen, tape, _) =
+        generate_with_hooks(&ir, ir.start, &budget_two, &mut rng, &mut gen_hooks2).unwrap();
+    assert_eq!(ast_gen.nodes.len(), 2);
+
+    let mut dec_hooks2 = OverrideHook;
+    let (ast_dec, _) = decode_with_hooks(&ir, &budget_two, &tape.bytes, &mut dec_hooks2).unwrap();
+    assert_eq!(ast_dec.nodes.len(), 2);
+    assert_eq!(ast_dec.serialize(), b"OVERRIDDEN");
+}

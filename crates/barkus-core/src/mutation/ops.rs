@@ -8,8 +8,8 @@ use rand::{Rng, RngExt};
 use crate::generate::generate_from;
 use crate::ir::grammar::GrammarIr;
 use crate::profile::Profile;
-use crate::tape::encode_residue_byte;
 use crate::tape::map::ModifierByte;
+use crate::tape::{encode_residue_byte, encode_residue_u16, encode_residue_u32, repetition_width};
 
 use super::fragment_db::FragmentDb;
 use super::MutationMeta;
@@ -125,7 +125,7 @@ pub fn subtree_regenerate(
 ) -> bool {
     let entries = &meta.tape_map.entries;
     let Some(idx) = pick_random_matching(entries.len(), rng, |i| {
-        entries[i].tape_len > 0 && entries[i].tape_offset > 2
+        entries[i].tape_len > 0 && (3..=tape.len()).contains(&entries[i].tape_offset)
     }) else {
         return false;
     };
@@ -135,7 +135,7 @@ pub fn subtree_regenerate(
         Ok((_ast, sub_tape, _map)) => {
             let sub_body = &sub_tape.bytes[2..];
             let start = entry.tape_offset;
-            let end = (start + entry.tape_len).min(tape.len());
+            let end = start.saturating_add(entry.tape_len).min(tape.len());
             tape.splice(start..end, sub_body.iter().copied());
             true
         }
@@ -172,11 +172,17 @@ pub fn toggle_optional(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl Rng)
 /// boundary conditions in repetition-dependent logic without drastically changing structure.
 pub fn perturb_repetition(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl Rng) -> bool {
     let mbs = &meta.tape_map.modifier_bytes;
-    let Some(idx) = pick_random_matching(
-        mbs.len(),
-        rng,
-        |i| matches!(mbs[i], ModifierByte::Repetition { tape_offset, .. } if tape_offset < tape.len()),
-    ) else {
+    let Some(idx) = pick_random_matching(mbs.len(), rng, |i| match mbs[i] {
+        ModifierByte::Repetition {
+            tape_offset,
+            min,
+            max,
+        } => {
+            let width = repetition_width(min, max);
+            width > 0 && tape_offset.saturating_add(width) <= tape.len()
+        }
+        ModifierByte::Optional { .. } => false,
+    }) else {
         return false;
     };
 
@@ -188,9 +194,17 @@ pub fn perturb_repetition(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl R
     else {
         unreachable!()
     };
-    let range = max - min + 1;
-    let current_byte = tape[tape_offset];
-    let current_count = min + (current_byte as u32 % range);
+
+    let range = u64::from(max - min) + 1;
+    let width = repetition_width(min, max);
+    let b = &tape[tape_offset..tape_offset + width];
+    let raw = match width {
+        1 => u64::from(b[0]),
+        2 => u64::from(u16::from_le_bytes([b[0], b[1]])),
+        4 => u64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
+        _ => unreachable!(),
+    };
+    let current_count = min + (raw % range) as u32;
 
     let new_count = if rng.random_bool(0.5) {
         if current_count < max {
@@ -204,12 +218,19 @@ pub fn perturb_repetition(tape: &mut [u8], meta: &MutationMeta, rng: &mut impl R
         current_count + 1
     };
 
-    if new_count < min || new_count > max {
-        return false;
+    let offset = u64::from(new_count - min);
+    match width {
+        1 => tape[tape_offset] = encode_residue_byte(offset as usize, range as usize, rng),
+        2 => {
+            let v = encode_residue_u16(offset as usize, range as usize, rng);
+            tape[tape_offset..tape_offset + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        4 => {
+            let v = encode_residue_u32(offset, range, rng);
+            tape[tape_offset..tape_offset + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        _ => unreachable!(),
     }
-
-    let offset = (new_count - min) as usize;
-    tape[tape_offset] = encode_residue_byte(offset, range as usize, rng);
     true
 }
 

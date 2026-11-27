@@ -181,6 +181,7 @@ fn expand_production_gen<H: SemanticHooks>(
     hooks.enter_production(prod_id);
 
     let prod = &grammar.productions[prod_id];
+    let tape_start = writer.offset();
 
     // If this production has a semantic hook, consume a tape byte and ask the hook.
     if let Some(hook_name) = &prod.attrs.semantic_hook {
@@ -189,12 +190,13 @@ fn expand_production_gen<H: SemanticHooks>(
         writer.write_choice(tape_byte as usize, 256, rng);
 
         if let Some(bytes) = hooks.on_production(&hook_name, tape_byte, prod_id) {
-            let tape_start = writer.offset() - 1; // the byte we just wrote
+            ctx.alloc_node()?;
             let node_id = ctx.ast.new_node(AstNodeKind::Terminal(bytes));
             // Wrap in a production node so the tape map stays consistent.
             let prod_node = ctx.ast.new_node(AstNodeKind::Production(prod_id));
             ctx.ast.add_child(prod_node, node_id);
-            ctx.tape_map.push(tape_start, 1, prod_node, prod_id);
+            ctx.tape_map
+                .push(tape_start, writer.offset() - tape_start, prod_node, prod_id);
             hooks.exit_production(prod_id);
             return Ok(prod_node);
         }
@@ -205,9 +207,6 @@ fn expand_production_gen<H: SemanticHooks>(
     let n_alts = prod.alternatives.len();
 
     eligible_alts(grammar, prod, remaining, eligible_buf);
-
-    let tape_start = writer.offset();
-
     let alt_idx = if eligible_buf.is_empty() {
         let chosen = pick_weighted(prod.alternatives.iter().map(|a| a.weight), rng);
         writer.write_choice(chosen, n_alts, rng);
@@ -315,14 +314,13 @@ fn record_modifier(
             tape_map.push_optional(offset);
         }
         Modifier::ZeroOrMore { min, max } => {
-            let hi = (*max).min(profile.repetition_bounds.1);
-            if *min < hi {
-                tape_map.push_repetition(offset, *min, hi);
+            let (lo, hi) = repetition_bounds(*min, *max, profile);
+            if lo < hi {
+                tape_map.push_repetition(offset, lo, hi);
             }
         }
         Modifier::OneOrMore { min, max } => {
-            let lo = (*min).max(1);
-            let hi = (*max).min(profile.repetition_bounds.1);
+            let (lo, hi) = repetition_bounds((*min).max(1), *max, profile);
             if lo < hi {
                 tape_map.push_repetition(offset, lo, hi);
             }
@@ -344,14 +342,13 @@ fn resolve_modifier_gen(
             chosen as u32
         }
         Modifier::ZeroOrMore { min, max } => {
-            let hi = (*max).min(profile.repetition_bounds.1);
-            let count = rng.random_range(*min..=hi);
-            writer.write_repetition(count, *min, hi, rng);
+            let (lo, hi) = repetition_bounds(*min, *max, profile);
+            let count = rng.random_range(lo..=hi);
+            writer.write_repetition(count, lo, hi, rng);
             count
         }
         Modifier::OneOrMore { min, max } => {
-            let lo = (*min).max(1);
-            let hi = (*max).min(profile.repetition_bounds.1);
+            let (lo, hi) = repetition_bounds((*min).max(1), *max, profile);
             let count = rng.random_range(lo..=hi);
             writer.write_repetition(count, lo, hi, rng);
             count
@@ -373,7 +370,7 @@ fn expand_symbol_gen<H: SemanticHooks>(
     match &grammar.symbols[sym_id] {
         Symbol::Terminal(tk) => {
             ctx.alloc_node()?;
-            let bytes = emit_terminal_gen(grammar, tk, writer, rng, hooks);
+            let bytes = emit_terminal_gen(grammar, profile, tk, writer, rng, hooks);
             Ok(ctx.ast.new_node(AstNodeKind::Terminal(bytes)))
         }
         Symbol::NonTerminal(pid) => {
@@ -385,6 +382,7 @@ fn expand_symbol_gen<H: SemanticHooks>(
 
 fn emit_terminal_gen<H: SemanticHooks>(
     grammar: &GrammarIr,
+    profile: &Profile,
     tk: &TerminalKind,
     writer: &mut TapeWriter,
     rng: &mut impl Rng,
@@ -442,7 +440,7 @@ fn emit_terminal_gen<H: SemanticHooks>(
             }
 
             // Mechanical fallback: expand from the pool's alternatives.
-            expand_token_pool_gen(grammar, *pool_id, tape_byte, writer, rng)
+            expand_token_pool_gen(grammar, profile, *pool_id, tape_byte, writer, rng)
         }
     }
 }
@@ -450,6 +448,7 @@ fn emit_terminal_gen<H: SemanticHooks>(
 /// Mechanically expand a token pool entry by picking an alternative and expanding its terminals.
 fn expand_token_pool_gen(
     grammar: &GrammarIr,
+    profile: &Profile,
     pool_id: crate::ir::ids::PoolId,
     tape_byte: u8,
     writer: &mut TapeWriter,
@@ -471,9 +470,12 @@ fn expand_token_pool_gen(
     for sym_ref in &alt.symbols {
         match &grammar.symbols[sym_ref.symbol] {
             Symbol::Terminal(tk) => {
+                let count = resolve_modifier_gen(&sym_ref.modifier, profile, writer, rng);
                 // Recursively expand terminals within the pool (no hooks — pools are mechanical).
-                let bytes = emit_terminal_gen_no_hooks(tk, writer, rng);
-                result.extend_from_slice(&bytes);
+                for _ in 0..count {
+                    let bytes = emit_terminal_gen_no_hooks(tk, writer, rng);
+                    result.extend_from_slice(&bytes);
+                }
             }
             Symbol::NonTerminal(_) => {
                 // Pool entries shouldn't reference non-terminals, but be defensive.
@@ -538,6 +540,7 @@ fn expand_production_dec<H: SemanticHooks>(
     hooks.enter_production(prod_id);
 
     let prod = &grammar.productions[prod_id];
+    let tape_start = reader.offset();
 
     // If this production has a semantic hook, consume a tape byte and ask the hook.
     if let Some(hook_name) = &prod.attrs.semantic_hook {
@@ -545,11 +548,12 @@ fn expand_production_dec<H: SemanticHooks>(
         let tape_byte = reader.choose(256) as u8;
 
         if let Some(bytes) = hooks.on_production(&hook_name, tape_byte, prod_id) {
-            let tape_start = reader.offset() - 1;
+            ctx.alloc_node()?;
             let node_id = ctx.ast.new_node(AstNodeKind::Terminal(bytes));
             let prod_node = ctx.ast.new_node(AstNodeKind::Production(prod_id));
             ctx.ast.add_child(prod_node, node_id);
-            ctx.tape_map.push(tape_start, 1, prod_node, prod_id);
+            ctx.tape_map
+                .push(tape_start, reader.offset() - tape_start, prod_node, prod_id);
             hooks.exit_production(prod_id);
             return Ok(prod_node);
         }
@@ -559,9 +563,6 @@ fn expand_production_dec<H: SemanticHooks>(
     let n_alts = prod.alternatives.len();
 
     eligible_alts(grammar, prod, remaining, eligible_buf);
-
-    let tape_start = reader.offset();
-
     let raw = reader.choose(n_alts);
     let alt_idx = if eligible_buf.is_empty() || eligible_buf.contains(&raw) {
         raw
@@ -617,7 +618,7 @@ fn expand_symbol_ref_dec<H: SemanticHooks>(
     );
 
     // Always consume the tape bytes to keep the reader aligned, then clamp
-    // the count to 0 when the inner symbol can't fit in the remaining depth.
+    // the count to its minimum when the inner symbol can't fit in the remaining depth.
     // This is essential because fuzzers mutate tapes arbitrarily — a mutated
     // tape can encode a high repetition count at any depth.
     let raw_count = resolve_modifier_dec(&sym_ref.modifier, profile, reader);
@@ -626,7 +627,8 @@ fn expand_symbol_ref_dec<H: SemanticHooks>(
     } else {
         match &sym_ref.modifier {
             Modifier::Once => 1,
-            Modifier::Optional | Modifier::ZeroOrMore { .. } => 0,
+            Modifier::Optional => 0,
+            Modifier::ZeroOrMore { min, .. } => *min,
             Modifier::OneOrMore { min, .. } => (*min).max(1),
         }
     };
@@ -655,12 +657,11 @@ fn resolve_modifier_dec(
         Modifier::Once => 1,
         Modifier::Optional => reader.choose(2) as u32,
         Modifier::ZeroOrMore { min, max } => {
-            let hi = (*max).min(profile.repetition_bounds.1);
-            reader.repetition(*min, hi)
+            let (lo, hi) = repetition_bounds(*min, *max, profile);
+            reader.repetition(lo, hi)
         }
         Modifier::OneOrMore { min, max } => {
-            let lo = (*min).max(1);
-            let hi = (*max).min(profile.repetition_bounds.1);
+            let (lo, hi) = repetition_bounds((*min).max(1), *max, profile);
             reader.repetition(lo, hi)
         }
     }
@@ -678,7 +679,7 @@ fn expand_symbol_dec<H: SemanticHooks>(
     match &grammar.symbols[sym_id] {
         Symbol::Terminal(tk) => {
             ctx.alloc_node()?;
-            let bytes = emit_terminal_dec(grammar, tk, reader, hooks);
+            let bytes = emit_terminal_dec(grammar, profile, tk, reader, hooks);
             Ok(ctx.ast.new_node(AstNodeKind::Terminal(bytes)))
         }
         Symbol::NonTerminal(pid) => {
@@ -690,6 +691,7 @@ fn expand_symbol_dec<H: SemanticHooks>(
 
 fn emit_terminal_dec<H: SemanticHooks>(
     grammar: &GrammarIr,
+    profile: &Profile,
     tk: &TerminalKind,
     reader: &mut TapeReader<'_>,
     hooks: &mut H,
@@ -721,7 +723,7 @@ fn emit_terminal_dec<H: SemanticHooks>(
                 return bytes;
             }
 
-            expand_token_pool_dec(grammar, *pool_id, tape_byte, reader)
+            expand_token_pool_dec(grammar, profile, *pool_id, tape_byte, reader)
         }
     }
 }
@@ -729,6 +731,7 @@ fn emit_terminal_dec<H: SemanticHooks>(
 /// Mechanically expand a token pool entry during decode.
 fn expand_token_pool_dec(
     grammar: &GrammarIr,
+    profile: &Profile,
     pool_id: crate::ir::ids::PoolId,
     tape_byte: u8,
     reader: &mut TapeReader<'_>,
@@ -749,8 +752,11 @@ fn expand_token_pool_dec(
     for sym_ref in &alt.symbols {
         match &grammar.symbols[sym_ref.symbol] {
             Symbol::Terminal(tk) => {
-                let bytes = emit_terminal_dec_no_hooks(tk, reader);
-                result.extend_from_slice(&bytes);
+                let count = resolve_modifier_dec(&sym_ref.modifier, profile, reader);
+                for _ in 0..count {
+                    let bytes = emit_terminal_dec_no_hooks(tk, reader);
+                    result.extend_from_slice(&bytes);
+                }
             }
             Symbol::NonTerminal(_) => {}
         }
@@ -823,14 +829,12 @@ fn resolve_modifier_min(
             0
         }
         Modifier::ZeroOrMore { min, max } => {
-            let hi = (*max).min(profile.repetition_bounds.1);
-            let count = *min; // smallest allowed
-            writer.write_repetition(count, *min, hi, rng);
-            count
+            let (lo, hi) = repetition_bounds(*min, *max, profile);
+            writer.write_repetition(lo, lo, hi, rng);
+            lo
         }
         Modifier::OneOrMore { min, max } => {
-            let lo = (*min).max(1);
-            let hi = (*max).min(profile.repetition_bounds.1);
+            let (lo, hi) = repetition_bounds((*min).max(1), *max, profile);
             writer.write_repetition(lo, lo, hi, rng);
             lo
         }
@@ -838,6 +842,13 @@ fn resolve_modifier_min(
 }
 
 // ── Shared helpers ──
+
+/// Compute clamped `(lo, hi)` bounds for a repetition modifier, guaranteeing `lo <= hi`.
+#[inline]
+fn repetition_bounds(lo: u32, max: u32, profile: &Profile) -> (u32, u32) {
+    let hi = max.min(profile.repetition_bounds.1).max(lo);
+    (lo, hi)
+}
 
 fn eligible_alts(
     grammar: &GrammarIr,
