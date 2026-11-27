@@ -357,3 +357,23 @@ fn generate_sequence() {
         );
     }
 }
+
+#[test]
+fn empty_alternative_from_lookahead() {
+    let ir = compile(r#"start <- !"x""#).unwrap();
+    assert_eq!(ir.productions.len(), 1);
+    let bytes = generate_one(&ir);
+    assert!(bytes.is_empty(), "expected empty output, got {bytes:?}");
+}
+
+#[test]
+fn error_inverted_char_class_range() {
+    let err = compile("start <- [z-a]").unwrap_err();
+    assert!(err.message.contains("inverted"), "got: {err}");
+}
+
+#[test]
+fn error_non_ascii_char_class() {
+    let err = compile("start <- [a-\u{0100}]").unwrap_err();
+    assert!(err.message.contains("non-ASCII"), "got: {err}");
+}

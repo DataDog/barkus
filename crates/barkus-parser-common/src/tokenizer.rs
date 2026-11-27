@@ -43,7 +43,12 @@ pub fn parse_string_literal(
                 }
             }
             *pos += 1;
-            *col += 1;
+            if escaped == '\n' {
+                *line += 1;
+                *col = 1;
+            } else {
+                *col += 1;
+            }
             continue;
         }
         if c == '\n' {
@@ -69,11 +74,23 @@ pub fn parse_char_class_contents(
     let mut ranges = Vec::new();
 
     while *pos < chars.len() && chars[*pos] != ']' {
+        let range_line = *line;
+        let range_col = *col;
         let c = read_char_class_char(chars, pos, line, col)?;
         if *pos + 1 < chars.len() && chars[*pos] == '-' && chars[*pos + 1] != ']' {
             *pos += 1; // skip -
             *col += 1;
             let end = read_char_class_char(chars, pos, line, col)?;
+            if c > end {
+                return Err(ParseError {
+                    line: range_line,
+                    column: range_col,
+                    message: format!(
+                        "inverted character class range: {}..={}",
+                        c as char, end as char
+                    ),
+                });
+            }
             ranges.push((c, end));
         } else {
             ranges.push((c, c));
@@ -121,8 +138,15 @@ pub fn read_char_class_char(
             });
         }
         let escaped = chars[*pos];
+        let esc_line = *line;
+        let esc_col = *col;
         *pos += 1;
-        *col += 1;
+        if escaped == '\n' {
+            *line += 1;
+            *col = 1;
+        } else {
+            *col += 1;
+        }
         let byte = match escaped {
             'n' => b'\n',
             'r' => b'\r',
@@ -131,12 +155,41 @@ pub fn read_char_class_char(
             ']' => b']',
             '[' => b'[',
             '-' => b'-',
-            _ => escaped as u8,
+            _ => {
+                if (escaped as u32) > 0xFF {
+                    return Err(ParseError {
+                        line: esc_line,
+                        column: esc_col,
+                        message: format!(
+                            "non-ASCII character in character class: {:?} (U+{:04X})",
+                            escaped, escaped as u32
+                        ),
+                    });
+                }
+                escaped as u8
+            }
         };
         Ok(byte)
     } else {
+        let ch_line = *line;
+        let ch_col = *col;
         *pos += 1;
-        *col += 1;
+        if ch == '\n' {
+            *line += 1;
+            *col = 1;
+        } else {
+            *col += 1;
+        }
+        if (ch as u32) > 0xFF {
+            return Err(ParseError {
+                line: ch_line,
+                column: ch_col,
+                message: format!(
+                    "non-ASCII character in character class: {:?} (U+{:04X})",
+                    ch, ch as u32
+                ),
+            });
+        }
         Ok(ch as u8)
     }
 }
@@ -195,5 +248,58 @@ pub fn skip_block_comment(
             *col += 1;
         }
         *pos += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn char_class_rejects_inverted_range() {
+        let chars: Vec<char> = "z-a]".chars().collect();
+        let (mut pos, mut line, mut col) = (0, 1, 2);
+        let err = parse_char_class_contents(&chars, &mut pos, &mut line, &mut col).unwrap_err();
+        assert!(
+            err.message.contains("inverted character class range"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn char_class_rejects_non_ascii_codepoint() {
+        let chars: Vec<char> = "a-\u{0100}]".chars().collect();
+        let (mut pos, mut line, mut col) = (0, 1, 2);
+        let err = parse_char_class_contents(&chars, &mut pos, &mut line, &mut col).unwrap_err();
+        assert!(err.message.contains("non-ASCII"), "got: {err}");
+
+        let esc: Vec<char> = "\\\u{0100}]".chars().collect();
+        let (mut pos, mut line, mut col) = (0, 1, 2);
+        let err = parse_char_class_contents(&esc, &mut pos, &mut line, &mut col).unwrap_err();
+        assert!(err.message.contains("non-ASCII"), "got: {err}");
+    }
+
+    #[test]
+    fn newline_updates_line_and_col_in_char_class_and_string() {
+        let chars: Vec<char> = "a\nb]".chars().collect();
+        let (mut pos, mut line, mut col) = (0, 1, 2);
+        let ranges = parse_char_class_contents(&chars, &mut pos, &mut line, &mut col).unwrap();
+        assert_eq!(ranges, vec![(b'a', b'a'), (b'\n', b'\n'), (b'b', b'b')]);
+        assert_eq!(line, 2);
+        assert_eq!(col, 3);
+
+        let esc: Vec<char> = "\\\nb]".chars().collect();
+        let (mut pos, mut line, mut col) = (0, 1, 2);
+        let ranges = parse_char_class_contents(&esc, &mut pos, &mut line, &mut col).unwrap();
+        assert_eq!(ranges, vec![(b'\n', b'\n'), (b'b', b'b')]);
+        assert_eq!(line, 2);
+        assert_eq!(col, 3);
+
+        let str_chars: Vec<char> = "\"a\\\nb\"".chars().collect();
+        let (mut pos, mut line, mut col) = (0, 1, 1);
+        let s = parse_string_literal(&str_chars, &mut pos, &mut line, &mut col, '"').unwrap();
+        assert_eq!(s, "a\\\nb");
+        assert_eq!(line, 2);
+        assert_eq!(col, 3);
     }
 }

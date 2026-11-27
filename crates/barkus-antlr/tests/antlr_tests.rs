@@ -409,3 +409,149 @@ fn compile_json_fixture() {
         assert!(!bytes.is_empty(), "generated output should not be empty");
     }
 }
+
+#[test]
+fn empty_alternative_compiles_and_generates() {
+    let ir = compile(
+        r#"
+        grammar Test;
+        start : 'x' | ;
+    "#,
+    )
+    .unwrap();
+    assert_eq!(ir.productions[0].alternatives.len(), 2);
+    for seed in 0..20 {
+        let s = String::from_utf8(generate_seeded(&ir, seed)).unwrap();
+        assert!(s == "x" || s.is_empty(), "unexpected: {s:?}");
+    }
+}
+
+#[test]
+fn compile_vendored_json_grammar() {
+    let source = include_str!("../../../grammars/json/JSON.g4");
+    let ir = compile(source).unwrap();
+    assert_eq!(ir.productions[ir.start.0 as usize].name, "json");
+    for seed in 0..10 {
+        let bytes = generate_seeded(&ir, seed);
+        assert!(!bytes.is_empty(), "generated JSON should not be empty");
+    }
+}
+
+#[test]
+fn char_range_operator() {
+    let ir = compile(
+        r#"
+        grammar Test;
+        start : LOWER ;
+        LOWER : 'a'..'z' ;
+    "#,
+    )
+    .unwrap();
+    let sym = &ir.symbols[ir.productions[1].alternatives[0].symbols[0].symbol.0 as usize];
+    match sym {
+        Symbol::Terminal(TerminalKind::CharClass { ranges, negated }) => {
+            assert!(!negated);
+            assert_eq!(ranges, &[(b'a', b'z')]);
+        }
+        other => panic!("expected CharClass, got {other:?}"),
+    }
+    for seed in 0..20 {
+        let bytes = generate_seeded(&ir, seed);
+        assert_eq!(bytes.len(), 1);
+        assert!(bytes[0].is_ascii_lowercase());
+    }
+
+    let err_inv = compile("grammar T; start : 'z'..'a' ;").unwrap_err();
+    assert!(err_inv.message.contains("inverted"), "got: {err_inv}");
+
+    let err_multi = compile("grammar T; start : 'ab'..'cd' ;").unwrap_err();
+    assert!(
+        err_multi.message.contains("single character"),
+        "got: {err_multi}"
+    );
+}
+
+#[test]
+fn tilde_negation_group_and_ident() {
+    let ir = compile(
+        r#"
+        grammar Test;
+        start : NOT_AB ;
+        NOT_AB : ~('a' | 'b') ;
+    "#,
+    )
+    .unwrap();
+    let syms = &ir.productions[1].alternatives[0].symbols;
+    assert_eq!(
+        syms.len(),
+        1,
+        "negated group must be consumed as a single symbol"
+    );
+    match &ir.symbols[syms[0].symbol.0 as usize] {
+        Symbol::Terminal(TerminalKind::CharClass { ranges, negated }) => {
+            assert!(negated);
+            assert_eq!(ranges, &[(b'a', b'a'), (b'b', b'b')]);
+        }
+        other => panic!("expected negated CharClass, got {other:?}"),
+    }
+
+    let ir_ident = compile(
+        r#"
+        grammar Test;
+        start : ~ID ;
+        ID : 'x' ;
+    "#,
+    )
+    .unwrap();
+    let syms = &ir_ident.productions[0].alternatives[0].symbols;
+    assert_eq!(
+        syms.len(),
+        1,
+        "~ID must consume ID and emit a single AnyByte symbol"
+    );
+    assert!(matches!(
+        ir_ident.symbols[syms[0].symbol.0 as usize],
+        Symbol::Terminal(TerminalKind::AnyByte)
+    ));
+
+    let ir_group_ident = compile(
+        r#"
+        grammar Test;
+        start : ~(ID | OTHER) ;
+        ID : 'x' ;
+        OTHER : 'y' ;
+    "#,
+    )
+    .unwrap();
+    let syms = &ir_group_ident.productions[0].alternatives[0].symbols;
+    assert_eq!(syms.len(), 1);
+    assert!(matches!(
+        ir_group_ident.symbols[syms[0].symbol.0 as usize],
+        Symbol::Terminal(TerminalKind::AnyByte)
+    ));
+}
+
+#[test]
+fn element_labels_stripped() {
+    let ir = compile(
+        r#"
+        grammar Test;
+        start : x='a' y+='b' ;
+    "#,
+    )
+    .unwrap();
+    let bytes = generate_one(&ir);
+    assert_eq!(bytes, b"ab");
+}
+
+#[test]
+fn error_inverted_and_non_ascii_char_class() {
+    let err_inv = compile("grammar T; start : [z-a] ;").unwrap_err();
+    assert!(err_inv.message.contains("inverted"), "got: {err_inv}");
+
+    let err_non_ascii = compile("grammar T; start : [a-\u{0100}] ;").unwrap_err();
+    assert!(
+        err_non_ascii.message.contains("non-ASCII"),
+        "got: {err_non_ascii}"
+    );
+}

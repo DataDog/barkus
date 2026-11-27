@@ -33,15 +33,14 @@ pub fn compile_split(lexer_source: &str, parser_source: &str) -> Result<GrammarI
     let lexer_tokens = tokenize(lexer_source)?;
     let lexer_raw = parse_grammar_for_split(&lexer_tokens)?;
 
-    // 2. Categorize lexer rules: fragment (skipped — not yet inlined), skip, or regular.
+    // 2. Categorize lexer rules: fragment (stored for inlining), skip, or regular.
+    let mut fragments: HashMap<String, Vec<RawAlternative<RawItem>>> = HashMap::new();
     let mut skip_rules: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut lexer_rules: HashMap<String, Vec<RawAlternative<RawItem>>> = HashMap::new();
 
     for rule in &lexer_raw.rules {
         if rule.is_fragment {
-            // Fragment rules are not exposed as pools. Fragment inlining is not
-            // yet implemented — references to fragments inside other lexer rules
-            // are silently dropped by raw_item_to_terminal.
+            fragments.insert(rule.name.clone(), rule.alternatives.clone());
         } else if rule.is_skip || rule.is_channel_hidden {
             skip_rules.insert(rule.name.clone());
         } else {
@@ -101,6 +100,7 @@ pub fn compile_split(lexer_source: &str, parser_source: &str) -> Result<GrammarI
                     &parser_name_to_id,
                     &keyword_literals,
                     &skip_rules,
+                    &fragments,
                     &lexer_rules,
                     &mut lexer_name_to_pool,
                     &mut pool_entries,
@@ -156,17 +156,173 @@ pub fn compile_split(lexer_source: &str, parser_source: &str) -> Result<GrammarI
     Ok(ir)
 }
 
-/// Convert a raw item to a terminal SymbolRef for token pool expansion.
-fn raw_item_to_terminal(item: &RawItem, symbols: &mut Vec<Symbol>) -> Option<SymbolRef> {
-    let tk = match item {
-        RawItem::Literal(s) => TerminalKind::Literal(s.as_bytes().to_vec()),
-        RawItem::CharClass { ranges, negated } => TerminalKind::CharClass {
-            ranges: ranges.clone(),
-            negated: *negated,
-        },
-        RawItem::AnyChar => TerminalKind::AnyByte,
+const MAX_FRAGMENT_DEPTH: usize = 16;
+
+/// Try to collapse a list of lexer alternatives into a single non-negated byte `CharClass`.
+/// Succeeds only when every alternative resolves to a single-byte literal or non-negated
+/// character class (including through single-symbol fragment references).
+fn try_collect_lexer_char_ranges<'a>(
+    alts: &'a [RawAlternative<RawItem>],
+    fragments: &'a HashMap<String, Vec<RawAlternative<RawItem>>>,
+    lexer_rules: &'a HashMap<String, Vec<RawAlternative<RawItem>>>,
+    visited: &mut Vec<&'a str>,
+    depth: usize,
+    out: &mut Vec<(u8, u8)>,
+) -> bool {
+    if alts.is_empty() || depth >= MAX_FRAGMENT_DEPTH {
+        return false;
+    }
+    for alt in alts {
+        if alt.items.len() != 1 {
+            return false;
+        }
+        match &alt.items[0] {
+            RawItem::Literal(s) if s.len() == 1 => {
+                let b = s.as_bytes()[0];
+                out.push((b, b));
+            }
+            RawItem::CharClass {
+                ranges,
+                negated: false,
+            } => {
+                out.extend_from_slice(ranges);
+            }
+            RawItem::Group(inner_alts) => {
+                if !try_collect_lexer_char_ranges(
+                    inner_alts,
+                    fragments,
+                    lexer_rules,
+                    visited,
+                    depth + 1,
+                    out,
+                ) {
+                    return false;
+                }
+            }
+            RawItem::NonTerminal(name, _, _) => {
+                if name == "EOF" || visited.contains(&name.as_str()) {
+                    return false;
+                }
+                let Some(ref_alts) = fragments.get(name).or_else(|| lexer_rules.get(name)) else {
+                    return false;
+                };
+                visited.push(name.as_str());
+                let ok = try_collect_lexer_char_ranges(
+                    ref_alts,
+                    fragments,
+                    lexer_rules,
+                    visited,
+                    depth + 1,
+                    out,
+                );
+                visited.pop();
+                if !ok {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    !out.is_empty()
+}
+
+/// Inline a slice of lexer alternatives into `out` as terminal `SymbolRef`s.
+fn expand_lexer_alternatives<'a>(
+    alts: &'a [RawAlternative<RawItem>],
+    fragments: &'a HashMap<String, Vec<RawAlternative<RawItem>>>,
+    lexer_rules: &'a HashMap<String, Vec<RawAlternative<RawItem>>>,
+    symbols: &mut Vec<Symbol>,
+    visited: &mut Vec<&'a str>,
+    depth: usize,
+    out: &mut Vec<SymbolRef>,
+) {
+    if alts.is_empty() || depth >= MAX_FRAGMENT_DEPTH {
+        return;
+    }
+    if alts.len() == 1 {
+        for item in &alts[0].items {
+            expand_lexer_item(item, fragments, lexer_rules, symbols, visited, depth, out);
+        }
+        return;
+    }
+    let mut merged_ranges = Vec::new();
+    if try_collect_lexer_char_ranges(
+        alts,
+        fragments,
+        lexer_rules,
+        visited,
+        depth,
+        &mut merged_ranges,
+    ) {
+        let sid = SymbolId(symbols.len() as u32);
+        symbols.push(Symbol::Terminal(TerminalKind::CharClass {
+            ranges: merged_ranges,
+            negated: false,
+        }));
+        out.push(SymbolRef {
+            symbol: sid,
+            modifier: Modifier::Once,
+        });
+        return;
+    }
+    // Multi-alternative fragment/group inside a sequence: pick the first alternative
+    // that yields at least one terminal so cycles/empty branches are skipped cleanly.
+    for alt in alts {
+        let before = out.len();
+        for item in &alt.items {
+            expand_lexer_item(item, fragments, lexer_rules, symbols, visited, depth, out);
+        }
+        if out.len() > before {
+            return;
+        }
+    }
+}
+
+/// Convert a raw lexer item to one or more terminal `SymbolRef`s for token pool expansion,
+/// recursively inlining fragment references and flattening groups.
+fn expand_lexer_item<'a>(
+    item: &'a RawItem,
+    fragments: &'a HashMap<String, Vec<RawAlternative<RawItem>>>,
+    lexer_rules: &'a HashMap<String, Vec<RawAlternative<RawItem>>>,
+    symbols: &mut Vec<Symbol>,
+    visited: &mut Vec<&'a str>,
+    depth: usize,
+    out: &mut Vec<SymbolRef>,
+) {
+    if depth >= MAX_FRAGMENT_DEPTH {
+        return;
+    }
+    match item {
+        RawItem::Literal(s) => {
+            let sid = SymbolId(symbols.len() as u32);
+            symbols.push(Symbol::Terminal(TerminalKind::Literal(
+                s.as_bytes().to_vec(),
+            )));
+            out.push(SymbolRef {
+                symbol: sid,
+                modifier: Modifier::Once,
+            });
+        }
+        RawItem::CharClass { ranges, negated } => {
+            let sid = SymbolId(symbols.len() as u32);
+            symbols.push(Symbol::Terminal(TerminalKind::CharClass {
+                ranges: ranges.clone(),
+                negated: *negated,
+            }));
+            out.push(SymbolRef {
+                symbol: sid,
+                modifier: Modifier::Once,
+            });
+        }
+        RawItem::AnyChar => {
+            let sid = SymbolId(symbols.len() as u32);
+            symbols.push(Symbol::Terminal(TerminalKind::AnyByte));
+            out.push(SymbolRef {
+                symbol: sid,
+                modifier: Modifier::Once,
+            });
+        }
         RawItem::Quantified(inner, q) => {
-            let inner_ref = raw_item_to_terminal(inner, symbols)?;
             let modifier = match q {
                 RawQuantifier::Optional => Modifier::Optional,
                 RawQuantifier::ZeroOrMore => Modifier::ZeroOrMore {
@@ -178,20 +334,56 @@ fn raw_item_to_terminal(item: &RawItem, symbols: &mut Vec<Symbol>) -> Option<Sym
                     max: u32::MAX,
                 },
             };
-            return Some(SymbolRef {
-                symbol: inner_ref.symbol,
-                modifier,
-            });
+            let mut inner_refs = Vec::new();
+            expand_lexer_item(
+                inner,
+                fragments,
+                lexer_rules,
+                symbols,
+                visited,
+                depth + 1,
+                &mut inner_refs,
+            );
+            if inner_refs.len() == 1 {
+                out.push(SymbolRef {
+                    symbol: inner_refs[0].symbol,
+                    modifier,
+                });
+            } else {
+                out.extend(inner_refs);
+            }
         }
-        // NonTerminal references within lexer rules (fragment references) — skip for now.
-        RawItem::NonTerminal(..) | RawItem::Group(..) => return None,
-    };
-    let sid = SymbolId(symbols.len() as u32);
-    symbols.push(Symbol::Terminal(tk));
-    Some(SymbolRef {
-        symbol: sid,
-        modifier: Modifier::Once,
-    })
+        RawItem::NonTerminal(name, _, _) => {
+            if name == "EOF" || visited.contains(&name.as_str()) {
+                return;
+            }
+            let Some(ref_alts) = fragments.get(name).or_else(|| lexer_rules.get(name)) else {
+                return;
+            };
+            visited.push(name.as_str());
+            expand_lexer_alternatives(
+                ref_alts,
+                fragments,
+                lexer_rules,
+                symbols,
+                visited,
+                depth + 1,
+                out,
+            );
+            visited.pop();
+        }
+        RawItem::Group(alts) => {
+            expand_lexer_alternatives(
+                alts,
+                fragments,
+                lexer_rules,
+                symbols,
+                visited,
+                depth + 1,
+                out,
+            );
+        }
+    }
 }
 
 /// Build IR symbol references for a single parser item in a split grammar.
@@ -201,6 +393,7 @@ fn build_split_item(
     parser_name_to_id: &HashMap<String, ProductionId>,
     keyword_literals: &HashMap<String, String>,
     skip_rules: &std::collections::HashSet<String>,
+    fragments: &HashMap<String, Vec<RawAlternative<RawItem>>>,
     lexer_rules: &HashMap<String, Vec<RawAlternative<RawItem>>>,
     lexer_name_to_pool: &mut HashMap<String, PoolId>,
     pool_entries: &mut Vec<TokenPoolEntry>,
@@ -257,8 +450,14 @@ fn build_split_item(
 
             // Check if it's a non-keyword lexer rule → token pool.
             if lexer_rules.contains_key(name.as_str()) {
-                let pool_id =
-                    alloc_pool_for(name, lexer_name_to_pool, pool_entries, lexer_rules, symbols);
+                let pool_id = alloc_pool_for(
+                    name,
+                    lexer_name_to_pool,
+                    pool_entries,
+                    fragments,
+                    lexer_rules,
+                    symbols,
+                );
                 let sid = SymbolId(symbols.len() as u32);
                 symbols.push(Symbol::Terminal(TerminalKind::TokenPool(pool_id)));
                 refs.push(SymbolRef {
@@ -308,6 +507,7 @@ fn build_split_item(
                         parser_name_to_id,
                         keyword_literals,
                         skip_rules,
+                        fragments,
                         lexer_rules,
                         lexer_name_to_pool,
                         pool_entries,
@@ -367,6 +567,7 @@ fn build_split_item(
                 parser_name_to_id,
                 keyword_literals,
                 skip_rules,
+                fragments,
                 lexer_rules,
                 lexer_name_to_pool,
                 pool_entries,
@@ -412,6 +613,7 @@ fn alloc_pool_for(
     name: &str,
     lexer_name_to_pool: &mut HashMap<String, PoolId>,
     pool_entries: &mut Vec<TokenPoolEntry>,
+    fragments: &HashMap<String, Vec<RawAlternative<RawItem>>>,
     lexer_rules: &HashMap<String, Vec<RawAlternative<RawItem>>>,
     symbols: &mut Vec<Symbol>,
 ) -> PoolId {
@@ -424,21 +626,34 @@ fn alloc_pool_for(
     let empty = Vec::new();
     let alts = lexer_rules.get(name).unwrap_or(&empty);
 
+    let mut visited = Vec::with_capacity(MAX_FRAGMENT_DEPTH);
     let ir_alts = alts
         .iter()
-        .map(|raw_alt| {
-            let syms: Vec<SymbolRef> = raw_alt
-                .items
-                .iter()
-                .filter_map(|item| raw_item_to_terminal(item, symbols))
-                .collect();
-            Alternative {
-                symbols: syms,
-                weight: 1.0,
-                semantic_tag: None,
+        .filter_map(|raw_alt| {
+            visited.clear();
+            visited.push(name);
+            let mut syms = Vec::with_capacity(raw_alt.items.len());
+            for item in &raw_alt.items {
+                expand_lexer_item(
+                    item,
+                    fragments,
+                    lexer_rules,
+                    symbols,
+                    &mut visited,
+                    0,
+                    &mut syms,
+                );
+            }
+            if syms.is_empty() {
+                None
+            } else {
+                Some(Alternative {
+                    symbols: syms,
+                    weight: 1.0,
+                    semantic_tag: None,
+                })
             }
         })
-        .filter(|alt| !alt.symbols.is_empty())
         .collect();
 
     pool_entries.push(TokenPoolEntry {
@@ -467,19 +682,6 @@ fn parse_grammar_for_split(tokens: &[Token]) -> Result<LexerGrammar, ParseError>
     let mut parser = Parser::new(tokens.to_vec());
     parser.skip_grammar_header()?;
 
-    // Pre-build a map of line → action kind for `-> skip` / `-> channel(HIDDEN)`.
-    // This lets us detect actions that parse_sequence's skip_action already consumed.
-    let mut line_actions: HashMap<usize, &str> = HashMap::new();
-    for w in tokens.windows(2) {
-        if w[0].kind == TokenKind::Arrow {
-            if let TokenKind::Ident(action) = &w[1].kind {
-                if action == "skip" || action == "channel" {
-                    line_actions.insert(w[0].line, action.as_str());
-                }
-            }
-        }
-    }
-
     let mut rules = Vec::new();
     while !parser.at_end() {
         let is_fragment = parser.peek_ident() == Some("fragment");
@@ -500,6 +702,9 @@ fn parse_grammar_for_split(tokens: &[Token]) -> Result<LexerGrammar, ParseError>
             _ => unreachable!(),
         };
 
+        // Skip optional rule-level `options { ... }` before `:`.
+        parser.skip_rule_options();
+
         if parser.expect(&TokenKind::Colon).is_err() {
             // Not a rule — skip ahead to next semicolon.
             while !parser.at_end() {
@@ -518,25 +723,11 @@ fn parse_grammar_for_split(tokens: &[Token]) -> Result<LexerGrammar, ParseError>
             continue;
         }
 
-        // Record position before parsing alternatives so we can bound the action scan.
-        let rule_start_line = name_tok.line;
+        parser.saw_skip_action = false;
+        parser.saw_channel_action = false;
         let alternatives = parser.parse_alternatives()?;
-
-        // The semicolon position bounds this rule's token range.
-        let rule_end_line = parser.peek().map(|t| t.line).unwrap_or(usize::MAX);
-
-        // Check if any `-> skip` or `-> channel(HIDDEN)` action falls within this rule.
-        let mut is_skip = false;
-        let mut is_channel_hidden = false;
-        for (&line, &action) in &line_actions {
-            if line >= rule_start_line && line <= rule_end_line {
-                match action {
-                    "skip" => is_skip = true,
-                    "channel" => is_channel_hidden = true,
-                    _ => {}
-                }
-            }
-        }
+        let is_skip = parser.saw_skip_action;
+        let is_channel_hidden = parser.saw_channel_action;
 
         parser.expect(&TokenKind::Semicolon)?;
 
@@ -582,7 +773,8 @@ enum TokenKind {
     Star,
     Plus,
     Dot,
-    Arrow, // ->
+    DotDot, // ..
+    Arrow,  // ->
     Comma,
     Assign, // =
     Hash,   // #
@@ -697,6 +889,18 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ParseError> {
             continue;
         }
 
+        // Char range operator: ..
+        if ch == '.' && pos + 1 < chars.len() && chars[pos + 1] == '.' {
+            tokens.push(Token {
+                kind: TokenKind::DotDot,
+                line,
+                col,
+            });
+            pos += 2;
+            col += 2;
+            continue;
+        }
+
         // Single-char tokens
         let single = match ch {
             ':' => Some(TokenKind::Colon),
@@ -789,6 +993,9 @@ impl BuildItem for RawItem {
         match item {
             RawItem::Literal(s) => builder.build_literal(s, refs),
             RawItem::NonTerminal(name, line, col) => {
+                if name == "EOF" && !builder.name_to_id.contains_key(name.as_str()) {
+                    return Ok(());
+                }
                 builder.build_nonterminal(name, *line, *col, refs)?;
             }
             RawItem::CharClass { ranges, negated } => {
@@ -807,11 +1014,18 @@ impl BuildItem for RawItem {
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    saw_skip_action: bool,
+    saw_channel_action: bool,
 }
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            saw_skip_action: false,
+            saw_channel_action: false,
+        }
     }
 
     fn peek(&self) -> Option<&Token> {
@@ -903,12 +1117,41 @@ impl Parser {
             self.expect(&TokenKind::Ident(String::new()))?;
             self.expect(&TokenKind::Semicolon)?;
         }
-        if self.peek_ident() == Some("options") {
+        while matches!(self.peek_ident(), Some("options" | "tokens" | "channels"))
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::LBrace)
+            )
+        {
             self.advance();
             self.expect(&TokenKind::LBrace)?;
             self.skip_brace_block();
         }
         Ok(())
+    }
+
+    /// Skip optional rule-level `options { ... }` block before `:`.
+    fn skip_rule_options(&mut self) {
+        if self.peek_ident() == Some("options")
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.kind),
+                Some(TokenKind::LBrace)
+            )
+        {
+            self.advance();
+            self.advance(); // '{'
+            self.skip_brace_block();
+        }
+    }
+
+    /// Return true when looking at an element label (`x=expr` or `x+=expr`).
+    fn at_element_label(&self) -> bool {
+        let next = self.tokens.get(self.pos + 1).map(|t| &t.kind);
+        let after = self.tokens.get(self.pos + 2).map(|t| &t.kind);
+        matches!(
+            (next, after),
+            (Some(TokenKind::Assign), _) | (Some(TokenKind::Plus), Some(TokenKind::Assign))
+        )
     }
 
     fn parse_grammar(&mut self) -> Result<RawGrammar<RawItem>, ParseError> {
@@ -939,6 +1182,7 @@ impl Parser {
             _ => unreachable!(),
         };
 
+        self.skip_rule_options();
         self.expect(&TokenKind::Colon)?;
         let alternatives = self.parse_alternatives()?;
         self.expect(&TokenKind::Semicolon)?;
@@ -995,6 +1239,20 @@ impl Parser {
                         self.advance();
                     }
                 }
+                Some(TokenKind::Ident(_)) if self.at_element_label() => {
+                    // Skip element label `x=expr` or `x+=expr`.
+                    self.advance(); // Ident
+                    if matches!(
+                        self.peek(),
+                        Some(Token {
+                            kind: TokenKind::Plus,
+                            ..
+                        })
+                    ) {
+                        self.advance(); // '+'
+                    }
+                    self.advance(); // '='
+                }
                 _ => {
                     if let Some(item) = self.parse_atom()? {
                         let item = self.maybe_quantified(item);
@@ -1011,15 +1269,18 @@ impl Parser {
 
     fn skip_action(&mut self) -> Result<(), ParseError> {
         self.advance(); // skip `->`
-                        // Consume comma-separated actions like `-> pushMode(META), more`
+        // Consume comma-separated actions like `-> pushMode(META), more`
         loop {
-            if matches!(
-                self.peek(),
-                Some(Token {
-                    kind: TokenKind::Ident(_),
-                    ..
-                })
-            ) {
+            if let Some(Token {
+                kind: TokenKind::Ident(action),
+                ..
+            }) = self.peek()
+            {
+                match action.as_str() {
+                    "skip" => self.saw_skip_action = true,
+                    "channel" => self.saw_channel_action = true,
+                    _ => {}
+                }
                 self.advance();
             }
             if matches!(
@@ -1068,10 +1329,26 @@ impl Parser {
         match &tok.kind {
             TokenKind::StringLit(_) => {
                 let tok = self.advance().unwrap();
-                match tok.kind {
-                    TokenKind::StringLit(s) => Ok(Some(RawItem::Literal(s))),
+                let s = match tok.kind {
+                    TokenKind::StringLit(s) => s,
                     _ => unreachable!(),
+                };
+                if matches!(
+                    self.peek(),
+                    Some(Token {
+                        kind: TokenKind::DotDot,
+                        ..
+                    })
+                ) {
+                    self.advance(); // consume `..`
+                    let hi_tok = self.expect(&TokenKind::StringLit(String::new()))?;
+                    let hi_s = match hi_tok.kind {
+                        TokenKind::StringLit(hs) => hs,
+                        _ => unreachable!(),
+                    };
+                    return Self::build_char_range(&s, &hi_s, tok.line, tok.col).map(Some);
                 }
+                Ok(Some(RawItem::Literal(s)))
             }
             TokenKind::Ident(_) => {
                 let tok = self.advance().unwrap();
@@ -1090,25 +1367,48 @@ impl Parser {
                 }
             }
             TokenKind::Tilde => {
-                // ANTLR negation: ~'c' → negated char class, ~(...) → skip as AnyChar approx
+                // ANTLR negation: ~'c', ~'a'..'z', ~[...], ~('a' | 'b'), ~IDENT.
                 self.advance();
                 match self.peek().map(|t| &t.kind) {
                     Some(TokenKind::StringLit(_)) => {
                         let tok = self.advance().unwrap();
-                        if let TokenKind::StringLit(s) = tok.kind {
+                        let s = match tok.kind {
+                            TokenKind::StringLit(s) => s,
+                            _ => unreachable!(),
+                        };
+                        if matches!(
+                            self.peek(),
+                            Some(Token {
+                                kind: TokenKind::DotDot,
+                                ..
+                            })
+                        ) {
+                            self.advance(); // consume `..`
+                            let hi_tok = self.expect(&TokenKind::StringLit(String::new()))?;
+                            let hi_s = match hi_tok.kind {
+                                TokenKind::StringLit(hs) => hs,
+                                _ => unreachable!(),
+                            };
+                            match Self::build_char_range(&s, &hi_s, tok.line, tok.col)? {
+                                RawItem::CharClass { ranges, .. } => {
+                                    Ok(Some(RawItem::CharClass {
+                                        ranges,
+                                        negated: true,
+                                    }))
+                                }
+                                _ => Ok(Some(RawItem::AnyChar)),
+                            }
+                        } else {
                             let ranges: Vec<(u8, u8)> = s.bytes().map(|b| (b, b)).collect();
                             Ok(Some(RawItem::CharClass {
                                 ranges,
                                 negated: true,
                             }))
-                        } else {
-                            unreachable!()
                         }
                     }
                     Some(TokenKind::CharClass { .. }) => {
                         let tok = self.advance().unwrap();
                         if let TokenKind::CharClass { ranges, .. } = tok.kind {
-                            // ~[...] as token sequence — already negated by the char class parse
                             Ok(Some(RawItem::CharClass {
                                 ranges,
                                 negated: true,
@@ -1117,10 +1417,25 @@ impl Parser {
                             unreachable!()
                         }
                     }
-                    _ => {
-                        // ~(rule) or unknown — approximate as AnyChar
+                    Some(TokenKind::LParen) => {
+                        self.advance();
+                        let alts = self.parse_alternatives()?;
+                        self.expect(&TokenKind::RParen)?;
+                        let mut ranges = Vec::new();
+                        if Self::collect_negatable_ranges(&alts, &mut ranges) {
+                            Ok(Some(RawItem::CharClass {
+                                ranges,
+                                negated: true,
+                            }))
+                        } else {
+                            Ok(Some(RawItem::AnyChar))
+                        }
+                    }
+                    Some(TokenKind::Ident(_)) => {
+                        self.advance();
                         Ok(Some(RawItem::AnyChar))
                     }
+                    _ => Ok(Some(RawItem::AnyChar)),
                 }
             }
             TokenKind::Dot => {
@@ -1153,6 +1468,105 @@ impl Parser {
             }
             _ => item,
         }
+    }
+
+    /// Parse an ANTLR4 character range `'a'..'z'` (or `'\uXXXX'..'\uYYYY'`).
+    fn build_char_range(
+        lo_s: &str,
+        hi_s: &str,
+        line: usize,
+        col: usize,
+    ) -> Result<RawItem, ParseError> {
+        let Some(lo_cp) = Self::parse_range_codepoint(lo_s) else {
+            return Err(ParseError {
+                line,
+                column: col,
+                message: format!(
+                    "character range lower bound must be a single character: {:?}",
+                    lo_s
+                ),
+            });
+        };
+        let Some(hi_cp) = Self::parse_range_codepoint(hi_s) else {
+            return Err(ParseError {
+                line,
+                column: col,
+                message: format!(
+                    "character range upper bound must be a single character: {:?}",
+                    hi_s
+                ),
+            });
+        };
+        if lo_cp > hi_cp {
+            return Err(ParseError {
+                line,
+                column: col,
+                message: format!("inverted character range: {:?}..{:?}", lo_s, hi_s),
+            });
+        }
+        if hi_cp <= 0xFF {
+            return Ok(RawItem::CharClass {
+                ranges: vec![(lo_cp as u8, hi_cp as u8)],
+                negated: false,
+            });
+        }
+        if lo_cp <= 0xFF {
+            return Ok(RawItem::CharClass {
+                ranges: vec![(lo_cp as u8, 0xFF)],
+                negated: false,
+            });
+        }
+        // Valid Unicode range above 0xFF (e.g. `'\u0300'..'\u036F'` in HTMLLexer.g4):
+        // `TerminalKind::CharClass` is byte-oriented, so emit a representative character.
+        if let Some(ch) = char::from_u32(lo_cp) {
+            Ok(RawItem::Literal(ch.to_string()))
+        } else {
+            Ok(RawItem::AnyChar)
+        }
+    }
+
+    fn parse_range_codepoint(s: &str) -> Option<u32> {
+        if s.len() == 1 {
+            return Some(s.as_bytes()[0] as u32);
+        }
+        s.strip_prefix("\\u")
+            .filter(|hex| hex.len() == 4)
+            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+    }
+
+    /// Collect byte ranges from a parenthesized group inside `~(...)` if every alternative
+    /// is a single-byte literal or non-negated character class.
+    fn collect_negatable_ranges(
+        alts: &[RawAlternative<RawItem>],
+        out: &mut Vec<(u8, u8)>,
+    ) -> bool {
+        if alts.is_empty() {
+            return false;
+        }
+        for alt in alts {
+            if alt.items.len() != 1 {
+                return false;
+            }
+            match &alt.items[0] {
+                RawItem::Literal(s) if s.len() == 1 => {
+                    let b = s.as_bytes()[0];
+                    out.push((b, b));
+                }
+                RawItem::CharClass {
+                    ranges,
+                    negated: false,
+                } => {
+                    out.extend_from_slice(ranges);
+                }
+                RawItem::Group(inner_alts) => {
+                    if !Self::collect_negatable_ranges(inner_alts, out) {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+        !out.is_empty()
     }
 }
 
