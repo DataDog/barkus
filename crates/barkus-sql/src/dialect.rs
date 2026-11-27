@@ -6,7 +6,7 @@ pub trait SqlDialect: Send + Sync {
     fn name(&self) -> &str;
 
     fn quote_identifier(&self, name: &str) -> String {
-        format!("\"{name}\"")
+        format!("\"{}\"", name.replace('"', "\"\""))
     }
 
     fn string_literal(&self, val: &str) -> String {
@@ -58,7 +58,7 @@ impl SqlDialect for MySqlDialect {
     /// MySQL identifiers are backtick-quoted in standard mode (and double-
     /// quoted only with ANSI_QUOTES sql_mode set, which is non-default).
     fn quote_identifier(&self, name: &str) -> String {
-        format!("`{name}`")
+        format!("`{}`", name.replace('`', "``"))
     }
     /// MySQL accepts TRUE/FALSE keywords but resolves them to 1/0; emit
     /// 1/0 directly so generated literals match what mysql_parser wants
