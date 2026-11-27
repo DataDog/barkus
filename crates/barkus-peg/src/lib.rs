@@ -219,14 +219,41 @@ impl BuildItem for RawItem {
 
 // ── Recursive descent parser ────────────────────────────────────────────────
 
+const MAX_PARSE_DEPTH: usize = 128;
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    depth: usize,
+    paren_depth: usize,
 }
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            depth: 0,
+            paren_depth: 0,
+        }
+    }
+
+    fn with_depth<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, ParseError>,
+    ) -> Result<T, ParseError> {
+        if self.depth >= MAX_PARSE_DEPTH {
+            let (line, column) = self.current_loc();
+            return Err(ParseError {
+                line,
+                column,
+                message: "maximum nesting depth exceeded".into(),
+            });
+        }
+        self.depth += 1;
+        let result = f(self);
+        self.depth -= 1;
+        result
     }
 
     fn peek(&self) -> Option<&Token> {
@@ -276,6 +303,9 @@ impl Parser {
     }
 
     fn at_rule_start(&self) -> bool {
+        if self.paren_depth > 0 {
+            return false;
+        }
         if let Some(Token {
             kind: TokenKind::Ident(_),
             ..
@@ -345,18 +375,20 @@ impl Parser {
     }
 
     fn parse_alternatives(&mut self) -> Result<Vec<RawAlternative<RawItem>>, ParseError> {
-        let mut alts = vec![self.parse_sequence()?];
-        while matches!(
-            self.peek(),
-            Some(Token {
-                kind: TokenKind::Slash,
-                ..
-            })
-        ) {
-            self.advance();
-            alts.push(self.parse_sequence()?);
-        }
-        Ok(alts)
+        self.with_depth(|p| {
+            let mut alts = vec![p.parse_sequence()?];
+            while matches!(
+                p.peek(),
+                Some(Token {
+                    kind: TokenKind::Slash,
+                    ..
+                })
+            ) {
+                p.advance();
+                alts.push(p.parse_sequence()?);
+            }
+            Ok(alts)
+        })
     }
 
     fn parse_sequence(&mut self) -> Result<RawAlternative<RawItem>, ParseError> {
@@ -374,7 +406,7 @@ impl Parser {
                     let before = self.pos;
                     match self.parse_atom()? {
                         Some(item) => {
-                            let item = self.maybe_quantified(item);
+                            let item = self.maybe_quantified(item)?;
                             items.push(item);
                         }
                         None if self.pos == before => break,
@@ -422,7 +454,10 @@ impl Parser {
             }
             TokenKind::LParen => {
                 self.advance();
-                let alts = self.parse_alternatives()?;
+                self.paren_depth += 1;
+                let alts = self.parse_alternatives();
+                self.paren_depth -= 1;
+                let alts = alts?;
                 match self.peek() {
                     Some(Token {
                         kind: TokenKind::RParen,
@@ -430,44 +465,58 @@ impl Parser {
                     }) => {
                         self.advance();
                     }
-                    _ => {
+                    Some(tok) => {
+                        return Err(ParseError {
+                            line: tok.line,
+                            column: tok.col,
+                            message: format!("expected ')', found {:?}", tok.kind),
+                        });
+                    }
+                    None => {
                         let (line, col) = self.current_loc();
                         return Err(ParseError {
                             line,
                             column: col,
-                            message: "expected ')'".into(),
+                            message: "expected ')', found end of input".into(),
                         });
                     }
                 }
                 Ok(Some(RawItem::Group(alts)))
             }
-            TokenKind::Ampersand | TokenKind::Bang => {
-                self.advance();
-                if let Some(item) = self.parse_atom()? {
-                    let _discarded = self.maybe_quantified(item);
+            TokenKind::Ampersand | TokenKind::Bang => self.with_depth(|p| {
+                p.advance();
+                if let Some(item) = p.parse_atom()? {
+                    let _discarded = p.maybe_quantified(item)?;
                 }
                 Ok(None)
-            }
+            }),
             _ => Ok(None),
         }
     }
 
-    fn maybe_quantified(&mut self, item: RawItem) -> RawItem {
-        match self.peek().map(|t| &t.kind) {
-            Some(TokenKind::Question) => {
-                self.advance();
-                RawItem::Quantified(Box::new(item), RawQuantifier::Optional)
+    fn maybe_quantified(&mut self, item: RawItem) -> Result<RawItem, ParseError> {
+        let quantifier = match self.peek().map(|t| &t.kind) {
+            Some(TokenKind::Question) => RawQuantifier::Optional,
+            Some(TokenKind::Star) => RawQuantifier::ZeroOrMore,
+            Some(TokenKind::Plus) => RawQuantifier::OneOrMore,
+            _ => return Ok(item),
+        };
+        self.advance();
+
+        if let Some(tok) = self.peek() {
+            if matches!(
+                tok.kind,
+                TokenKind::Question | TokenKind::Star | TokenKind::Plus
+            ) {
+                return Err(ParseError {
+                    line: tok.line,
+                    column: tok.col,
+                    message: "unexpected repeated quantifier".into(),
+                });
             }
-            Some(TokenKind::Star) => {
-                self.advance();
-                RawItem::Quantified(Box::new(item), RawQuantifier::ZeroOrMore)
-            }
-            Some(TokenKind::Plus) => {
-                self.advance();
-                RawItem::Quantified(Box::new(item), RawQuantifier::OneOrMore)
-            }
-            _ => item,
         }
+
+        Ok(RawItem::Quantified(Box::new(item), quantifier))
     }
 }
 
