@@ -193,7 +193,7 @@ fn main() {
 
 fn compile_grammar(path: &std::path::Path, source: &str) -> Result<GrammarIr, String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("ebnf");
-    match ext {
+    match ext.to_ascii_lowercase().as_str() {
         "g4" => barkus_antlr::compile(source).map_err(|e| e.to_string()),
         "peg" => barkus_peg::compile(source).map_err(|e| e.to_string()),
         _ => barkus_ebnf::compile(source).map_err(|e| e.to_string()),
@@ -236,4 +236,36 @@ fn compile_and_configure(
     let profile = builder.build();
 
     (grammar, profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    const ANTLR_SRC: &str = "grammar Test;\nstart : 'hello' ;";
+    const PEG_SRC: &str = r#"start <- "hello""#;
+    const EBNF_SRC: &str = r#"start = "hello" ;"#;
+
+    #[test]
+    fn compile_grammar_handles_extensions_case_insensitively() {
+        for name in ["test.g4", "test.G4"] {
+            let ir = compile_grammar(Path::new(name), ANTLR_SRC)
+                .unwrap_or_else(|e| panic!("{name} failed: {e}"));
+            assert_eq!(ir.productions[0].name, "start");
+        }
+
+        for name in ["test.peg", "test.PEG"] {
+            let ir = compile_grammar(Path::new(name), PEG_SRC)
+                .unwrap_or_else(|e| panic!("{name} failed: {e}"));
+            assert_eq!(ir.productions[0].name, "start");
+        }
+
+        for name in ["test.ebnf", "test.EBNF", "test"] {
+            let ir = compile_grammar(Path::new(name), EBNF_SRC)
+                .unwrap_or_else(|e| panic!("{name} failed: {e}"));
+            assert_eq!(ir.productions[0].name, "start");
+        }
+    }
 }
