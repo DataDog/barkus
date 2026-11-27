@@ -99,6 +99,9 @@ func NewGenerator(source string, seed uint64, maxDepth uint32) (*Generator, erro
 		srcPtr = (*C.uint8_t)(unsafe.Pointer(&src[0]))
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	handle := C.barkus_compile(srcPtr, C.size_t(len(src)), C.uint64_t(seed), C.uint32_t(maxDepth))
 	runtime.KeepAlive(src)
 
@@ -133,6 +136,9 @@ func NewGeneratorWithOptions(source string, opts ...GrammarOption) (*Generator, 
 		configPtr = (*C.uint8_t)(unsafe.Pointer(&configJSON[0]))
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	handle := C.barkus_compile_with_config(
 		srcPtr, C.size_t(len(src)),
 		configPtr, C.size_t(len(configJSON)),
@@ -161,10 +167,13 @@ func (g *Generator) Generate(buf []byte) ([]byte, error) {
 		return nil, errors.New("barkus: buffer is empty")
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	outputLen := C.size_t(len(buf))
 	rc := C.barkus_generate(g.handle, (*C.uint8_t)(unsafe.Pointer(&buf[0])), &outputLen)
+	runtime.KeepAlive(g)
 	runtime.KeepAlive(buf)
-
 	if rc != 0 {
 		return nil, lastError()
 	}
@@ -184,6 +193,9 @@ func (g *Generator) GenerateWithTape(buf, tapeBuf []byte) (output, tape []byte, 
 		return nil, nil, errors.New("barkus: tape buffer is empty")
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	outputLen := C.size_t(len(buf))
 	tapeLen := C.size_t(len(tapeBuf))
 	rc := C.barkus_generate_with_tape(
@@ -191,9 +203,9 @@ func (g *Generator) GenerateWithTape(buf, tapeBuf []byte) (output, tape []byte, 
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])), &outputLen,
 		(*C.uint8_t)(unsafe.Pointer(&tapeBuf[0])), &tapeLen,
 	)
+	runtime.KeepAlive(g)
 	runtime.KeepAlive(buf)
 	runtime.KeepAlive(tapeBuf)
-
 	if rc != 0 {
 		return nil, nil, lastError()
 	}
@@ -214,6 +226,9 @@ func Decode(source string, tape []byte, maxDepth uint32) ([]byte, error) {
 	if len(src) > 0 {
 		srcPtr = (*C.uint8_t)(unsafe.Pointer(&src[0]))
 	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
 	handle := C.barkus_compile(srcPtr, C.size_t(len(src)), C.uint64_t(0), C.uint32_t(maxDepth))
 	runtime.KeepAlive(src)
@@ -247,6 +262,9 @@ func DecodeWithOptions(source string, tape []byte, opts ...GrammarOption) ([]byt
 	if len(configJSON) > 0 {
 		configPtr = (*C.uint8_t)(unsafe.Pointer(&configJSON[0]))
 	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 
 	handle := C.barkus_compile_with_config(
 		srcPtr, C.size_t(len(src)),
@@ -282,15 +300,18 @@ func (g *Generator) Decode(tape, buf []byte) ([]byte, error) {
 		return nil, errors.New("barkus: buffer is empty")
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	outputLen := C.size_t(len(buf))
 	rc := C.barkus_decode(
 		g.handle,
 		(*C.uint8_t)(unsafe.Pointer(&tape[0])), C.size_t(len(tape)),
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])), &outputLen,
 	)
+	runtime.KeepAlive(g)
 	runtime.KeepAlive(tape)
 	runtime.KeepAlive(buf)
-
 	if rc != 0 {
 		return nil, lastError()
 	}

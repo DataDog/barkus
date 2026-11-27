@@ -129,6 +129,9 @@ func NewSQLGenerator(dialect Dialect, opts ...SQLOption) (*SQLGenerator, error) 
 		configPtr = (*C.uint8_t)(unsafe.Pointer(&configJSON[0]))
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	handle := C.barkus_sql_compile(
 		dialectPtr, C.size_t(len(dialectBytes)),
 		configPtr, C.size_t(configLen),
@@ -155,10 +158,13 @@ func (g *SQLGenerator) Generate(buf []byte) ([]byte, error) {
 		return nil, errors.New("barkus: buffer is empty")
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	outputLen := C.size_t(len(buf))
 	rc := C.barkus_sql_generate(g.handle, (*C.uint8_t)(unsafe.Pointer(&buf[0])), &outputLen)
+	runtime.KeepAlive(g)
 	runtime.KeepAlive(buf)
-
 	if rc != 0 {
 		return nil, lastError()
 	}
@@ -177,6 +183,9 @@ func (g *SQLGenerator) GenerateWithTape(buf, tapeBuf []byte) (output, tape []byt
 		return nil, nil, errors.New("barkus: tape buffer is empty")
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	outputLen := C.size_t(len(buf))
 	tapeLen := C.size_t(len(tapeBuf))
 	rc := C.barkus_sql_generate_with_tape(
@@ -184,9 +193,9 @@ func (g *SQLGenerator) GenerateWithTape(buf, tapeBuf []byte) (output, tape []byt
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])), &outputLen,
 		(*C.uint8_t)(unsafe.Pointer(&tapeBuf[0])), &tapeLen,
 	)
+	runtime.KeepAlive(g)
 	runtime.KeepAlive(buf)
 	runtime.KeepAlive(tapeBuf)
-
 	if rc != 0 {
 		return nil, nil, lastError()
 	}
@@ -205,15 +214,18 @@ func (g *SQLGenerator) Decode(tape, buf []byte) ([]byte, error) {
 		return nil, errors.New("barkus: buffer is empty")
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	outputLen := C.size_t(len(buf))
 	rc := C.barkus_sql_decode(
 		g.handle,
 		(*C.uint8_t)(unsafe.Pointer(&tape[0])), C.size_t(len(tape)),
 		(*C.uint8_t)(unsafe.Pointer(&buf[0])), &outputLen,
 	)
+	runtime.KeepAlive(g)
 	runtime.KeepAlive(tape)
 	runtime.KeepAlive(buf)
-
 	if rc != 0 {
 		return nil, lastError()
 	}
