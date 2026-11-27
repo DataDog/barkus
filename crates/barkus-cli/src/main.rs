@@ -86,18 +86,9 @@ fn main() {
                 None => rand::make_rng(),
             };
 
-            for _ in 0..count {
-                match generate(&ir, &profile, &mut rng) {
-                    Ok((ast, tape, _map)) => {
-                        print_output(&ast);
-                        if emit_tape {
-                            eprintln!("{}", hex::encode(&tape.bytes));
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("generate error: {e}");
-                    }
-                }
+            let code = run_generate(&ir, &profile, &mut rng, count, emit_tape);
+            if code != 0 {
+                process::exit(code);
             }
         }
         Command::Decode {
@@ -186,12 +177,81 @@ fn print_output(ast: &Ast) {
     }
 }
 
+fn run_generate(
+    ir: &GrammarIr,
+    profile: &Profile,
+    rng: &mut SmallRng,
+    count: u32,
+    emit_tape: bool,
+) -> i32 {
+    let mut succeeded: u32 = 0;
+    for _ in 0..count {
+        match generate(ir, profile, rng) {
+            Ok((ast, tape, _map)) => {
+                succeeded += 1;
+                print_output(&ast);
+                if emit_tape {
+                    eprintln!("{}", hex::encode(&tape.bytes));
+                }
+            }
+            Err(e) => {
+                eprintln!("generate error: {e}");
+            }
+        }
+    }
+    i32::from(count > 0 && succeeded == 0)
+}
+
 fn compile_grammar(path: &std::path::Path, source: &str) -> Result<GrammarIr, String> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("ebnf");
 
-    match ext {
+    match ext.to_ascii_lowercase().as_str() {
         "g4" => barkus_antlr::compile(source).map_err(|e| e.to_string()),
         "peg" => barkus_peg::compile(source).map_err(|e| e.to_string()),
         _ => barkus_ebnf::compile(source).map_err(|e| e.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    const ANTLR_SRC: &str = "grammar Test;\nstart : 'hello' ;";
+    const PEG_SRC: &str = r#"start <- "hello""#;
+    const EBNF_SRC: &str = r#"start = "hello" ;"#;
+
+    #[test]
+    fn compile_grammar_handles_extensions_case_insensitively() {
+        for name in ["test.g4", "test.G4"] {
+            let ir = compile_grammar(Path::new(name), ANTLR_SRC)
+                .unwrap_or_else(|e| panic!("{name} failed: {e}"));
+            assert_eq!(ir.productions[0].name, "start");
+        }
+
+        for name in ["test.peg", "test.PEG"] {
+            let ir = compile_grammar(Path::new(name), PEG_SRC)
+                .unwrap_or_else(|e| panic!("{name} failed: {e}"));
+            assert_eq!(ir.productions[0].name, "start");
+        }
+
+        for name in ["test.ebnf", "test.EBNF", "test"] {
+            let ir = compile_grammar(Path::new(name), EBNF_SRC)
+                .unwrap_or_else(|e| panic!("{name} failed: {e}"));
+            assert_eq!(ir.productions[0].name, "start");
+        }
+    }
+
+    #[test]
+    fn run_generate_returns_nonzero_when_all_samples_fail() {
+        let ir = compile_grammar(Path::new("test.ebnf"), EBNF_SRC).unwrap();
+        let zero_depth = Profile::builder().max_depth(0).build();
+        let profile = Profile::default();
+        let mut rng = SmallRng::seed_from_u64(42);
+
+        assert_eq!(run_generate(&ir, &zero_depth, &mut rng, 3, false), 1);
+        assert_eq!(run_generate(&ir, &zero_depth, &mut rng, 0, false), 0);
+        assert_eq!(run_generate(&ir, &profile, &mut rng, 2, false), 0);
     }
 }
