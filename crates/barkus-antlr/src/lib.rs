@@ -1269,6 +1269,7 @@ impl Parser {
 
     fn skip_action(&mut self) -> Result<(), ParseError> {
         self.advance(); // skip `->`
+
         // Consume comma-separated actions like `-> pushMode(META), more`
         loop {
             if let Some(Token {
@@ -1390,12 +1391,10 @@ impl Parser {
                                 _ => unreachable!(),
                             };
                             match Self::build_char_range(&s, &hi_s, tok.line, tok.col)? {
-                                RawItem::CharClass { ranges, .. } => {
-                                    Ok(Some(RawItem::CharClass {
-                                        ranges,
-                                        negated: true,
-                                    }))
-                                }
+                                RawItem::CharClass { ranges, .. } => Ok(Some(RawItem::CharClass {
+                                    ranges,
+                                    negated: true,
+                                })),
                                 _ => Ok(Some(RawItem::AnyChar)),
                             }
                         } else {
@@ -1536,10 +1535,7 @@ impl Parser {
 
     /// Collect byte ranges from a parenthesized group inside `~(...)` if every alternative
     /// is a single-byte literal or non-negated character class.
-    fn collect_negatable_ranges(
-        alts: &[RawAlternative<RawItem>],
-        out: &mut Vec<(u8, u8)>,
-    ) -> bool {
+    fn collect_negatable_ranges(alts: &[RawAlternative<RawItem>], out: &mut Vec<(u8, u8)>) -> bool {
         if alts.is_empty() {
             return false;
         }
