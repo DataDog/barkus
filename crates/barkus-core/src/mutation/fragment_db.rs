@@ -39,6 +39,9 @@ impl FragmentDb {
     /// it to the production's pool (if under capacity) or replaces a random existing fragment
     /// (reservoir sampling).
     pub fn ingest(&mut self, tape: &[u8], meta: &MutationMeta, rng: &mut impl Rng) {
+        if self.max_fragments_per_production == 0 {
+            return;
+        }
         for entry in &meta.tape_map.entries {
             let pid = entry.production_id.0 as usize;
             if pid >= self.pools.len() {

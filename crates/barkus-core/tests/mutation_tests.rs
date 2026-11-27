@@ -501,3 +501,87 @@ fn roundtrip_all_operators() {
         ));
     }
 }
+
+#[test]
+fn fragment_db_zero_capacity_ingest_no_panic() {
+    let ir = build_recursive_grammar();
+    let profile = Profile::builder().max_depth(6).build();
+    let mut rng = SmallRng::seed_from_u64(42);
+
+    let (ast, tape, tape_map) = generate(&ir, &profile, &mut rng).unwrap();
+    let meta = MutationMeta::compute(&ast, tape_map, &ir);
+
+    let mut db = FragmentDb::new(ir.productions.len(), 0);
+    db.ingest(&tape.bytes, &meta, &mut rng);
+    for pid in 0..ir.productions.len() {
+        assert_eq!(db.pool_len(ProductionId(pid as u32)), 0);
+    }
+}
+
+#[test]
+fn subtree_regenerate_truncated_tape_no_panic() {
+    let ir = build_repetition_grammar();
+    let profile = Profile::default();
+    let mut rng = SmallRng::seed_from_u64(99);
+
+    let (ast, tape, tape_map) = generate(&ir, &profile, &mut rng).unwrap();
+    let meta = MutationMeta::compute(&ast, tape_map, &ir);
+    assert!(
+        meta.tape_map
+            .entries
+            .iter()
+            .any(|e| e.tape_len > 0 && e.tape_offset > 2),
+        "expected at least one non-root entry"
+    );
+
+    // Truncating tape below every non-root entry's offset must return false without panicking.
+    for len in 0..=2 {
+        let mut truncated = tape.bytes[..len.min(tape.bytes.len())].to_vec();
+        let changed = ops::subtree_regenerate(&mut truncated, &meta, &ir, &profile, &mut rng);
+        assert!(!changed);
+    }
+}
+
+#[test]
+fn perturb_repetition_wide_range_over_256() {
+    let mut symbols = Vec::new();
+    let x = lit_sym(&mut symbols, b"x");
+    let alt = multi_alt(vec![(x, Modifier::ZeroOrMore { min: 0, max: 300 })]);
+    let mut ir = GrammarIr {
+        productions: vec![Production {
+            id: ProductionId(0),
+            name: "S".into(),
+            alternatives: vec![alt],
+            attrs: ProductionAttrs::default(),
+        }],
+        symbols,
+        start: ProductionId(0),
+        token_pools: Vec::new(),
+    };
+    compute_min_depths(&mut ir);
+
+    let profile = Profile::builder().repetition_bounds(0, 300).build();
+    for seed in 0..50u64 {
+        let mut gen_rng = SmallRng::seed_from_u64(seed);
+        let (ast, tape, tape_map) = generate(&ir, &profile, &mut gen_rng).unwrap();
+        let orig_len = ast.serialize().len();
+        let meta = MutationMeta::compute(&ast, tape_map, &ir);
+
+        let mut mutated = tape.bytes.clone();
+        let mut mut_rng = SmallRng::seed_from_u64(seed + 1_000);
+        assert!(ops::perturb_repetition(&mut mutated, &meta, &mut mut_rng));
+
+        let (dec_ast, _) = decode(&ir, &profile, &mutated).unwrap();
+        let new_len = dec_ast.serialize().len();
+        assert_eq!(
+            orig_len.abs_diff(new_len),
+            1,
+            "seed={seed}: expected ±1 change, orig={orig_len}, new={new_len}"
+        );
+
+        // Truncated to only 1 body byte (2-byte repetition doesn't fit) must return false safely.
+        let mut truncated = tape.bytes[..3].to_vec();
+        let changed = ops::perturb_repetition(&mut truncated, &meta, &mut mut_rng);
+        assert!(!changed);
+    }
+}

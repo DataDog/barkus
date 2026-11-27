@@ -89,3 +89,97 @@ fn tape_from_bytes_empty_defaults_strict() {
     let tape = DecisionTape::from_bytes(vec![]);
     assert_eq!(tape.validity_mode(), ValidityMode::Strict);
 }
+
+#[test]
+fn tape_wide_choice_roundtrip_and_widths() {
+    let mut rng = SmallRng::seed_from_u64(123);
+    let cases: &[(usize, usize, usize)] = &[
+        (0, 1, 0),
+        (0, 256, 1),
+        (255, 256, 1),
+        (0, 257, 2),
+        (256, 257, 2),
+        (0, 452, 2),
+        (256, 452, 2),
+        (451, 452, 2),
+        (65_535, 65_536, 2),
+        (0, 70_000, 4),
+        (65_536, 70_000, 4),
+        (69_999, 70_000, 4),
+    ];
+
+    let mut writer = TapeWriter::new(ValidityMode::Strict);
+    for &(chosen, n, expected_width) in cases {
+        let before = writer.offset();
+        writer.write_choice(chosen, n, &mut rng);
+        assert_eq!(
+            writer.offset() - before,
+            expected_width,
+            "wrong width for n={n}"
+        );
+    }
+
+    let tape = writer.finish();
+    let mut reader = TapeReader::new(&tape.bytes);
+    for &(expected, n, expected_width) in cases {
+        let before = reader.offset();
+        let got = reader.choose(n);
+        assert_eq!(got, expected, "choice mismatch for n={n}");
+        assert_eq!(
+            reader.offset() - before,
+            expected_width,
+            "reader width mismatch for n={n}"
+        );
+    }
+}
+
+#[test]
+fn tape_wide_repetition_roundtrip_and_u32_max() {
+    let mut rng = SmallRng::seed_from_u64(456);
+    let cases: &[(u32, u32, u32, usize)] = &[
+        (255, 0, 255, 1),
+        (0, 0, 300, 2),
+        (256, 0, 300, 2),
+        (300, 0, 300, 2),
+        (10, 10, 70_000, 4),
+        (69_999, 10, 70_000, 4),
+        (0, 0, u32::MAX, 4),
+        (u32::MAX, 0, u32::MAX, 4),
+    ];
+
+    let mut writer = TapeWriter::new(ValidityMode::Strict);
+    for &(count, min, max, expected_width) in cases {
+        let before = writer.offset();
+        writer.write_repetition(count, min, max, &mut rng);
+        assert_eq!(
+            writer.offset() - before,
+            expected_width,
+            "wrong width for [{min}, {max}]"
+        );
+    }
+
+    let tape = writer.finish();
+    let mut reader = TapeReader::new(&tape.bytes);
+    for &(expected, min, max, expected_width) in cases {
+        let before = reader.offset();
+        let got = reader.repetition(min, max);
+        assert_eq!(got, expected, "repetition mismatch for [{min}, {max}]");
+        assert_eq!(
+            reader.offset() - before,
+            expected_width,
+            "reader width mismatch for [{min}, {max}]"
+        );
+    }
+}
+
+#[test]
+fn tape_reader_wide_totality_on_truncated_tape() {
+    // 2-byte header + 1 body byte (0x2a): past-EOF bytes read as 0.
+    let bytes = [0, 0, 0x2a];
+    let mut reader = TapeReader::new(&bytes);
+    assert_eq!(reader.read_u16(), 0x002a);
+    assert_eq!(reader.read_u16(), 0);
+    assert_eq!(reader.read_u32(), 0);
+    assert_eq!(reader.choose(452), 0);
+    assert_eq!(reader.repetition(5, 305), 5);
+}
