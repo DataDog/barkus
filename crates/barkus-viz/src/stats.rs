@@ -38,18 +38,19 @@ impl Histogram {
                 max,
             };
         }
-        let range = max - min + 1;
-        let bucket_size = (range as usize).div_ceil(n_buckets).max(1);
-        let actual_buckets = (range as usize).div_ceil(bucket_size);
+        let range = u64::from(max) - u64::from(min) + 1;
+        let n_buckets = (n_buckets as u64).max(1);
+        let bucket_size = range.div_ceil(n_buckets).max(1);
+        let actual_buckets = range.div_ceil(bucket_size) as usize;
         let mut counts = vec![0u64; actual_buckets];
         for &v in values {
-            let idx = ((v - min) as usize) / bucket_size;
+            let idx = ((u64::from(v) - u64::from(min)) / bucket_size) as usize;
             counts[idx] += 1;
         }
         let buckets = counts
             .into_iter()
             .enumerate()
-            .map(|(i, c)| (min + (i * bucket_size) as u32, c))
+            .map(|(i, c)| ((u64::from(min) + (i as u64) * bucket_size) as u32, c))
             .collect();
         Self { buckets, min, max }
     }
@@ -178,12 +179,23 @@ impl StatsCollector {
                 self.touched.push(pid);
             }
 
-            // Recover alternative index from tape byte.
+            // Recover alternative index from tape bytes (total-decoder semantics:
+            // missing bytes default to 0, matching TapeReader).
             if !self.has_semantic_hook[pid] {
                 let n = self.n_alts[pid];
-                if n > 1 {
-                    let byte = tape.bytes[entry.tape_offset] as usize;
-                    let alt_idx = byte % n;
+                if n > 256 {
+                    let b0 = tape.bytes.get(entry.tape_offset).copied().unwrap_or(0);
+                    let b1 = entry
+                        .tape_offset
+                        .checked_add(1)
+                        .and_then(|i| tape.bytes.get(i))
+                        .copied()
+                        .unwrap_or(0);
+                    let alt_idx = usize::from(u16::from_le_bytes([b0, b1])) % n;
+                    self.alt_hits[pid][alt_idx] += 1;
+                } else if n > 1 {
+                    let b = tape.bytes.get(entry.tape_offset).copied().unwrap_or(0);
+                    let alt_idx = usize::from(b) % n;
                     self.alt_hits[pid][alt_idx] += 1;
                 } else if n == 1 {
                     self.alt_hits[pid][0] += 1;
@@ -317,5 +329,109 @@ mod tests {
         ast.add_child(root, child);
         ast.add_child(child, leaf);
         assert_eq!(compute_max_depth(&ast), 3);
+    }
+
+    #[test]
+    fn test_histogram_full_u32_range() {
+        let values = [0, u32::MAX];
+        let h = Histogram::build_from_raw(&values, 20);
+        assert_eq!(h.min, 0);
+        assert_eq!(h.max, u32::MAX);
+        assert_eq!(h.buckets.len(), 20);
+        let total: u64 = h.buckets.iter().map(|(_, c)| c).sum();
+        assert_eq!(total, 2);
+        assert_eq!(h.buckets[0], (0, 1));
+        assert_eq!(h.buckets.last().unwrap().1, 1);
+
+        let single = Histogram::build_from_raw(&values, 1);
+        assert_eq!(single.buckets, vec![(0, 2)]);
+    }
+
+    #[test]
+    fn test_record_payload_short_and_empty_tape() {
+        let grammar = GrammarIr {
+            productions: vec![barkus_core::ir::Production {
+                id: ProductionId(0),
+                name: "root".into(),
+                alternatives: vec![
+                    barkus_core::ir::Alternative {
+                        symbols: vec![],
+                        weight: 1.0,
+                        semantic_tag: None,
+                    };
+                    3
+                ],
+                attrs: Default::default(),
+            }],
+            symbols: vec![],
+            start: ProductionId(0),
+            token_pools: vec![],
+        };
+
+        let mut ast = Ast {
+            nodes: Vec::new(),
+            root: NodeId(0),
+        };
+        let root = ast.new_node(AstNodeKind::Production(ProductionId(0)));
+
+        let mut tape_map = TapeMap::new();
+        tape_map.push(2, 1, root, ProductionId(0));
+
+        let mut collector = StatsCollector::new_with_capacity(&grammar, 2);
+        collector.record_payload(&ast, &DecisionTape::from_bytes(vec![]), &tape_map);
+        collector.record_payload(&ast, &DecisionTape::from_bytes(vec![0, 0]), &tape_map);
+
+        let stats = collector.finalize(&grammar);
+        assert_eq!(stats.total_payloads, 2);
+        assert_eq!(stats.productions[0].hit_count, 2);
+        assert_eq!(stats.productions[0].alternatives[0].hit_count, 2);
+        assert_eq!(stats.productions[0].alternatives[1].hit_count, 0);
+        assert_eq!(stats.productions[0].alternatives[2].hit_count, 0);
+    }
+
+    #[test]
+    fn test_record_payload_wide_alternatives() {
+        let grammar = GrammarIr {
+            productions: vec![barkus_core::ir::Production {
+                id: ProductionId(0),
+                name: "wide".into(),
+                alternatives: vec![
+                    barkus_core::ir::Alternative {
+                        symbols: vec![],
+                        weight: 1.0,
+                        semantic_tag: None,
+                    };
+                    300
+                ],
+                attrs: Default::default(),
+            }],
+            symbols: vec![],
+            start: ProductionId(0),
+            token_pools: vec![],
+        };
+
+        let mut ast = Ast {
+            nodes: Vec::new(),
+            root: NodeId(0),
+        };
+        let root = ast.new_node(AstNodeKind::Production(ProductionId(0)));
+
+        let mut tape_map = TapeMap::new();
+        tape_map.push(2, 2, root, ProductionId(0));
+
+        let mut collector = StatsCollector::new_with_capacity(&grammar, 3);
+        // Full 2-byte LE value: 257 -> alt 257.
+        let [lo, hi] = 257u16.to_le_bytes();
+        let wide_tape = DecisionTape::from_bytes(vec![0, 0, lo, hi]);
+        collector.record_payload(&ast, &wide_tape, &tape_map);
+        // Truncated 1 byte available: [5, 0] LE -> alt 5.
+        collector.record_payload(&ast, &DecisionTape::from_bytes(vec![0, 0, 5]), &tape_map);
+        // Empty tape: [0, 0] LE -> alt 0.
+        collector.record_payload(&ast, &DecisionTape::from_bytes(vec![]), &tape_map);
+
+        let stats = collector.finalize(&grammar);
+        assert_eq!(stats.productions[0].alternatives[257].hit_count, 1);
+        assert_eq!(stats.productions[0].alternatives[5].hit_count, 1);
+        assert_eq!(stats.productions[0].alternatives[0].hit_count, 1);
     }
 }

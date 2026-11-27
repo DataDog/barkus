@@ -78,7 +78,7 @@ fn maybe_recommend(
     if frac <= CAUSE_FRACTION_THRESHOLD {
         return None;
     }
-    let new_val = current_val * multiplier;
+    let new_val = current_val.saturating_mul(multiplier).max(multiplier);
     let pct_of_failures = (cause_count as f64 / total_failures as f64 * 100.0).min(100.0);
     Some(Recommendation {
         flag: format!("{flag} {new_val}"),
@@ -173,5 +173,38 @@ mod tests {
         let profile = Profile::default();
         let recs = analyze(&stats, &profile);
         assert!(recs.is_empty());
+    }
+
+    #[test]
+    fn saturates_on_large_profile_budgets() {
+        let stats = make_stats(1000, 800, 400, 400);
+        let profile = Profile {
+            max_depth: u32::MAX,
+            max_total_nodes: u32::MAX,
+            ..Profile::default()
+        };
+        let recs = analyze(&stats, &profile);
+        assert_eq!(recs.len(), 2);
+        let expected_depth = format!("--max-depth {}", u32::MAX);
+        let expected_nodes = format!("--max-nodes {}", u32::MAX);
+        assert!(recs.iter().any(|r| r.flag == expected_depth));
+        assert!(recs.iter().any(|r| r.flag == expected_nodes));
+    }
+
+    #[test]
+    fn zero_budget_recommends_positive_value() {
+        let stats = make_stats(1000, 800, 400, 400);
+        let profile = Profile {
+            max_depth: 0,
+            max_total_nodes: 0,
+            ..Profile::default()
+        };
+        let recs = analyze(&stats, &profile);
+        assert_eq!(recs.len(), 2);
+        let expected_depth = format!("--max-depth {DEPTH_MULTIPLIER}");
+        let expected_nodes = format!("--max-nodes {NODES_MULTIPLIER}");
+        assert!(recs.iter().any(|r| r.flag == expected_depth));
+        assert!(recs.iter().any(|r| r.flag == expected_nodes));
+        assert!(!recs.iter().any(|r| r.flag.ends_with(" 0")));
     }
 }

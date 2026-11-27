@@ -179,7 +179,7 @@ fn render_production_table(out: &mut String, stats: &CorpusStats) {
     let max_name_len = stats
         .productions
         .iter()
-        .map(|p| p.name.len() + if p.has_semantic_hook { 7 } else { 0 })
+        .map(|p| p.name.chars().count() + if p.has_semantic_hook { 7 } else { 0 })
         .max()
         .unwrap_or(4)
         .max(4);
@@ -224,9 +224,11 @@ fn render_production_table(out: &mut String, stats: &CorpusStats) {
         if p.has_semantic_hook {
             name_display.push_str(" [hook]");
         }
-        if name_display.len() > name_width {
-            name_display.truncate(name_width - 1);
-            name_display.push('…');
+        if let Some((cut_idx, _)) = name_display.char_indices().nth(name_width - 1) {
+            if name_display[cut_idx..].chars().nth(1).is_some() {
+                name_display.truncate(cut_idx);
+                name_display.push('…');
+            }
         }
 
         // Alt distribution bar
@@ -532,5 +534,42 @@ mod tests {
         let output = render(&stats, &reach, &[], "empty.ebnf");
         assert!(output.contains("No data"));
         assert!(output.contains("No productions"));
+    }
+
+    #[test]
+    fn test_render_truncates_multibyte_utf8_production_names() {
+        let mut stats = sample_stats();
+        stats.productions = vec![
+            ProductionStats {
+                // > 30 chars and multi-byte UTF-8 (3 bytes per char)
+                name: "日本語テスト表現ルール識別子文字列超過確認用名称とても長い名前".into(),
+                production_id: 0,
+                hit_count: 100,
+                payload_hit_count: 100,
+                alternatives: vec![AlternativeStats {
+                    index: 0,
+                    weight: 1.0,
+                    hit_count: 100,
+                }],
+                has_semantic_hook: true,
+            },
+            ProductionStats {
+                // < 30 chars, > 30 bytes (2 bytes per char -> 40 bytes, 20 chars)
+                name: "α".repeat(20),
+                production_id: 1,
+                hit_count: 50,
+                payload_hit_count: 50,
+                alternatives: vec![AlternativeStats {
+                    index: 0,
+                    weight: 1.0,
+                    hit_count: 50,
+                }],
+                has_semantic_hook: false,
+            },
+        ];
+        let reach = ReachabilityReport::default();
+        let output = render(&stats, &reach, &[], "utf8.ebnf");
+        assert!(output.contains('…'));
+        assert!(output.contains(&"α".repeat(20)));
     }
 }

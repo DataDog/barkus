@@ -9,7 +9,8 @@ pub fn render(
     recommendations: &[Recommendation],
     grammar_path: &str,
 ) -> String {
-    let json = json::render_compact(stats, reachability, recommendations, grammar_path);
+    let raw_json = json::render_compact(stats, reachability, recommendations, grammar_path);
+    let json = escape_json_for_script(&raw_json);
     let escaped_path = html_escape(grammar_path);
 
     format!(
@@ -361,6 +362,12 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Escape sequences that can terminate or alter an HTML `<script>` block while
+/// keeping the embedded JS literal intact.
+fn escape_json_for_script(json: &str) -> String {
+    json.replace("</", r"<\/").replace("<!--", r"<\!--")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,5 +415,50 @@ mod tests {
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("barkus-viz Coverage Report"));
         assert!(html.contains("\"total_payloads\":10"));
+    }
+
+    #[test]
+    fn test_render_escapes_script_breakout_in_json() {
+        let stats = CorpusStats {
+            total_payloads: 1,
+            failures: 0,
+            failure_breakdown: FailureBreakdown {
+                max_depth: 0,
+                max_total_nodes: 0,
+            },
+            productions: vec![ProductionStats {
+                name: "prod</SCRIPT><!--comment".into(),
+                production_id: 0,
+                hit_count: 1,
+                payload_hit_count: 1,
+                alternatives: vec![AlternativeStats {
+                    index: 0,
+                    weight: 1.0,
+                    hit_count: 1,
+                }],
+                has_semantic_hook: false,
+            }],
+            depth_histogram: Histogram {
+                buckets: vec![(1, 1)],
+                min: 1,
+                max: 1,
+            },
+            node_count_histogram: Histogram {
+                buckets: vec![(1, 1)],
+                min: 1,
+                max: 1,
+            },
+        };
+
+        let reachability = ReachabilityReport::default();
+        let malicious_path = "</script><script>alert(1)</script><!--";
+        let html = render(&stats, &reachability, &[], malicious_path);
+
+        // Only the single legitimate closing </script> tag should appear.
+        assert_eq!(html.to_ascii_lowercase().matches("</script>").count(), 1);
+        assert!(!html.contains("<!--"));
+        assert!(html.contains(r"<\/script>"));
+        assert!(html.contains(r"<\/SCRIPT>"));
+        assert!(html.contains(r"<\!--"));
     }
 }

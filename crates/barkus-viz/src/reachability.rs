@@ -137,7 +137,9 @@ pub fn analyze(grammar: &GrammarIr, stats: &CorpusStats) -> ReachabilityReport {
         for (alt_idx, alt) in prod.alternatives.iter().enumerate() {
             for sym_ref in &alt.symbols {
                 if let Symbol::NonTerminal(target_id) = &grammar.symbols[sym_ref.symbol] {
-                    referencing_alts[target_id.0 as usize].push((prod.id, alt_idx));
+                    if *target_id != prod.id {
+                        referencing_alts[target_id.0 as usize].push((prod.id, alt_idx));
+                    }
                 }
             }
         }
@@ -292,5 +294,97 @@ mod tests {
         let report = analyze(&grammar, &stats);
         assert_eq!(report.unreached.len(), 1);
         assert_eq!(report.unreached[0].name, "unused");
+    }
+
+    #[test]
+    fn test_self_recursion_choke_points() {
+        use barkus_core::ir::{Alternative, Modifier, Production, SymbolId, SymbolRef};
+
+        // Grammar:
+        //   S (0) -> B | ""
+        //   B (1) -> B | ""   (genuine choke point: only entered via S alt 0)
+        //   dead (2) -> dead  (unreachable self-loop: NOT a choke point)
+        let grammar = GrammarIr {
+            productions: vec![
+                Production {
+                    id: ProductionId(0),
+                    name: "S".into(),
+                    alternatives: vec![
+                        Alternative {
+                            symbols: vec![SymbolRef {
+                                symbol: SymbolId(0),
+                                modifier: Modifier::Once,
+                            }],
+                            weight: 1.0,
+                            semantic_tag: None,
+                        },
+                        Alternative {
+                            symbols: vec![],
+                            weight: 1.0,
+                            semantic_tag: None,
+                        },
+                    ],
+                    attrs: Default::default(),
+                },
+                Production {
+                    id: ProductionId(1),
+                    name: "B".into(),
+                    alternatives: vec![
+                        Alternative {
+                            symbols: vec![SymbolRef {
+                                symbol: SymbolId(0),
+                                modifier: Modifier::Once,
+                            }],
+                            weight: 1.0,
+                            semantic_tag: None,
+                        },
+                        Alternative {
+                            symbols: vec![],
+                            weight: 1.0,
+                            semantic_tag: None,
+                        },
+                    ],
+                    attrs: Default::default(),
+                },
+                Production {
+                    id: ProductionId(2),
+                    name: "dead".into(),
+                    alternatives: vec![Alternative {
+                        symbols: vec![SymbolRef {
+                            symbol: SymbolId(1),
+                            modifier: Modifier::Once,
+                        }],
+                        weight: 1.0,
+                        semantic_tag: None,
+                    }],
+                    attrs: Default::default(),
+                },
+            ],
+            symbols: vec![
+                Symbol::NonTerminal(ProductionId(1)),
+                Symbol::NonTerminal(ProductionId(2)),
+            ],
+            start: ProductionId(0),
+            token_pools: vec![],
+        };
+
+        let stats = CorpusStats {
+            total_payloads: 10,
+            failures: 0,
+            failure_breakdown: FailureBreakdown {
+                max_depth: 0,
+                max_total_nodes: 0,
+            },
+            productions: vec![],
+            depth_histogram: empty_histogram(),
+            node_count_histogram: empty_histogram(),
+        };
+
+        let report = analyze(&grammar, &stats);
+        assert_eq!(report.choke_points.len(), 1);
+        assert_eq!(report.choke_points[0].production_name, "B");
+        assert_eq!(report.choke_points[0].parent_name, "S");
+        assert_eq!(report.choke_points[0].parent_id, 0);
+        assert_eq!(report.choke_points[0].parent_alt_index, 0);
     }
 }
