@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::ir::ids::{ProductionId, SymbolId};
+use crate::ir::ids::{PoolId, ProductionId, SymbolId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenerateError {
@@ -17,6 +17,9 @@ pub enum BudgetKind {
 pub enum IrError {
     InvalidProductionRef(ProductionId),
     InvalidSymbolRef(SymbolId),
+    InvalidPoolRef(PoolId),
+    InvalidByteRange(u8, u8),
+    InvalidModifierBounds { min: u32, max: u32 },
     EmptyAlternative { production: ProductionId },
     MissingStartProduction,
     MinDepthInconsistency { production: ProductionId },
@@ -49,6 +52,15 @@ impl fmt::Display for IrError {
             }
             IrError::InvalidSymbolRef(id) => {
                 write!(f, "invalid symbol reference: {}", id.0)
+            }
+            IrError::InvalidPoolRef(id) => {
+                write!(f, "invalid token pool reference: {}", id.0)
+            }
+            IrError::InvalidByteRange(lo, hi) => {
+                write!(f, "invalid byte range: {lo}..={hi}")
+            }
+            IrError::InvalidModifierBounds { min, max } => {
+                write!(f, "invalid modifier bounds: min={min}, max={max}")
             }
             IrError::EmptyAlternative { production } => {
                 write!(f, "empty alternative in production {}", production.0)
