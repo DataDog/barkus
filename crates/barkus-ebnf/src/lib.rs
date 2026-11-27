@@ -367,6 +367,13 @@ impl Parser {
         }
 
         let alternatives = self.parse_alternatives()?;
+        if alternatives.len() == 1 && alternatives[0].items.is_empty() {
+            return Err(ParseError {
+                line: name_tok.line,
+                column: name_tok.col,
+                message: "empty rule body".into(),
+            });
+        }
 
         match self.peek() {
             Some(Token {

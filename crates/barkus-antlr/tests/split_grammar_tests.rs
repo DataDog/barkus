@@ -250,3 +250,132 @@ fn sqlite_grammar_generates() {
         "expected at least one non-empty output across 20 seeds"
     );
 }
+
+#[test]
+fn same_line_skip_does_not_skip_earlier_rule() {
+    let lexer = "lexer grammar L;\nTOK : 'hello'; WS : ' ' -> skip;\n";
+    let parser = "parser grammar P;\noptions { tokenVocab = L; }\nstart : TOK ;\n";
+    let ir = compile_split(lexer, parser).unwrap();
+    let bytes = generate_one(&ir);
+    assert_eq!(bytes, b"hello");
+}
+
+#[test]
+fn fragment_inlining_populates_pool_and_generates_digits() {
+    let lexer = r#"
+        lexer grammar L;
+        fragment DIGIT : [0-9] ;
+        NUM : DIGIT+ ;
+    "#;
+    let parser = r#"
+        parser grammar P;
+        options { tokenVocab = L; }
+        start : NUM ;
+    "#;
+    let ir = compile_split(lexer, parser).unwrap();
+    assert!(!ir.token_pools.iter().any(|p| p.name == "DIGIT"));
+    let num_pool = ir
+        .token_pools
+        .iter()
+        .find(|p| p.name == "NUM")
+        .expect("NUM pool should exist");
+    assert!(
+        !num_pool.alternatives.is_empty(),
+        "NUM pool should have inlined alternatives"
+    );
+    for seed in 0..20 {
+        let bytes = generate_seeded(&ir, seed);
+        assert!(!bytes.is_empty(), "NUM should generate non-empty output");
+        assert!(
+            bytes.iter().all(u8::is_ascii_digit),
+            "expected digits, got {:?}",
+            String::from_utf8_lossy(&bytes)
+        );
+    }
+}
+
+#[test]
+fn recursive_fragments_terminate() {
+    let lexer = r#"
+        lexer grammar L;
+        fragment A : B 'x' ;
+        fragment B : A | 'y' ;
+        TOK : A ;
+    "#;
+    let parser = r#"
+        parser grammar P;
+        options { tokenVocab = L; }
+        start : TOK ;
+    "#;
+    let ir = compile_split(lexer, parser).unwrap();
+    let tok_pool = ir
+        .token_pools
+        .iter()
+        .find(|p| p.name == "TOK")
+        .expect("TOK pool should exist");
+    assert!(!tok_pool.alternatives.is_empty());
+    let bytes = generate_one(&ir);
+    assert_eq!(bytes, b"yx");
+}
+
+#[test]
+fn vendored_split_grammars_compile_with_inlined_fragments() {
+    let cases: &[(&str, &str, &str, &[&str])] = &[
+        (
+            "sqlite",
+            include_str!("../../../grammars/sqlite/SQLiteLexer.g4"),
+            include_str!("../../../grammars/sqlite/SQLiteParser.g4"),
+            &["NUMERIC_LITERAL", "IDENTIFIER"],
+        ),
+        (
+            "trino",
+            include_str!("../../../grammars/trino/TrinoLexer.g4"),
+            include_str!("../../../grammars/trino/TrinoParser.g4"),
+            &["INTEGER_VALUE_", "IDENTIFIER_"],
+        ),
+        (
+            "mysql",
+            include_str!("../../../grammars/mysql/MySQLLexer.g4"),
+            include_str!("../../../grammars/mysql/MySQLParser.g4"),
+            &["IDENTIFIER", "SELECT_SYMBOL"],
+        ),
+        (
+            "postgresql",
+            include_str!("../../../grammars/postgresql/PostgreSQLLexer.g4"),
+            include_str!("../../../grammars/postgresql/PostgreSQLParser.g4"),
+            &["Identifier", "Integral"],
+        ),
+        (
+            "html",
+            include_str!("../../../grammars/html/HTMLLexer.g4"),
+            include_str!("../../../grammars/html/HTMLParser.g4"),
+            &["TAG_NAME"],
+        ),
+        (
+            "css3",
+            include_str!("../../../grammars/css3/css3Lexer.g4"),
+            include_str!("../../../grammars/css3/css3Parser.g4"),
+            &["Ident", "FontFace"],
+        ),
+    ];
+
+    for &(name, lexer_src, parser_src, expected_non_empty_pools) in cases {
+        let ir = compile_split(lexer_src, parser_src)
+            .unwrap_or_else(|e| panic!("{name} failed to compile_split: {e}"));
+        assert!(
+            !ir.token_pools.is_empty(),
+            "{name} should produce token pools"
+        );
+        for &pool_name in expected_non_empty_pools {
+            let pool = ir
+                .token_pools
+                .iter()
+                .find(|p| p.name == pool_name)
+                .unwrap_or_else(|| panic!("{name}: expected token pool {pool_name}"));
+            assert!(
+                !pool.alternatives.is_empty(),
+                "{name}: token pool {pool_name} should have non-empty alternatives"
+            );
+        }
+    }
+}

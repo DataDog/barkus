@@ -385,3 +385,17 @@ fn generate_repetition() {
         );
     }
 }
+
+#[test]
+fn empty_alternative_and_empty_optional() {
+    let ir = compile(r#"start = "x" | ;"#).unwrap();
+    assert_eq!(ir.productions[0].alternatives.len(), 2);
+    for seed in 0..20 {
+        let s = String::from_utf8(generate_seeded(&ir, seed)).unwrap();
+        assert!(s == "x" || s.is_empty(), "unexpected: {s:?}");
+    }
+
+    let ir_opt = compile(r#"start = [] ;"#).unwrap();
+    let bytes = generate_one(&ir_opt);
+    assert!(bytes.is_empty(), "expected empty output, got {bytes:?}");
+}

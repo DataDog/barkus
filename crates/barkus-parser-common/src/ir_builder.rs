@@ -50,6 +50,16 @@ impl<'a> IrBuilder<'a> {
         self.alloc_symbol(Symbol::NonTerminal(anon_id))
     }
 
+    /// Emit a zero-byte literal so an empty alternative still satisfies
+    /// `GrammarIr::validate()` (which requires at least one symbol per alternative).
+    fn empty_literal_ref(&mut self) -> SymbolRef {
+        let sid = self.alloc_symbol(Symbol::Terminal(TerminalKind::Literal(Vec::new())));
+        SymbolRef {
+            symbol: sid,
+            modifier: Modifier::Once,
+        }
+    }
+
     pub fn build_alternatives<I: BuildItem>(
         &mut self,
         alts: &[RawAlternative<I>],
@@ -58,15 +68,14 @@ impl<'a> IrBuilder<'a> {
     ) -> Result<Vec<Alternative>, ParseError> {
         let mut result = Vec::with_capacity(alts.len());
         for alt in alts {
-            if alt.items.is_empty() {
-                result.push(Alternative {
-                    symbols: Vec::new(),
-                    weight: 1.0,
-                    semantic_tag: None,
-                });
-                continue;
+            let mut sym_refs = if alt.items.is_empty() {
+                Vec::with_capacity(1)
+            } else {
+                self.build_items(&alt.items)?
+            };
+            if sym_refs.is_empty() {
+                sym_refs.push(self.empty_literal_ref());
             }
-            let sym_refs = self.build_items(&alt.items)?;
             result.push(Alternative {
                 symbols: sym_refs,
                 weight: 1.0,
@@ -153,10 +162,13 @@ impl<'a> IrBuilder<'a> {
         refs: &mut Vec<SymbolRef>,
     ) -> Result<(), ParseError> {
         if alts.len() == 1 && !alts[0].items.is_empty() {
-            let inner_refs = self.build_items(&alts[0].items)?;
+            let mut inner_refs = self.build_items(&alts[0].items)?;
             if inner_refs.len() == 1 {
                 refs.push(inner_refs.into_iter().next().unwrap());
             } else {
+                if inner_refs.is_empty() {
+                    inner_refs.push(self.empty_literal_ref());
+                }
                 let sid = self.push_anon_production(vec![Alternative {
                     symbols: inner_refs,
                     weight: 1.0,
@@ -211,6 +223,10 @@ impl<'a> IrBuilder<'a> {
 
         if refs.len() == 1 && matches!(refs[0].modifier, Modifier::Once) {
             return Ok(refs[0].symbol);
+        }
+
+        if refs.is_empty() {
+            refs.push(self.empty_literal_ref());
         }
 
         let sid = self.push_anon_production(vec![Alternative {
